@@ -41,7 +41,7 @@ get_action_probabilities :: proc(
 		best_visits := -1
 		for k in 0 ..< n {
 			ci := root.child[k]
-			v := 0 if ci < 0 else t.nodes[ci].N
+			v := 0 if ci < 0 else t.node_N[ci]
 			if v > best_visits {best_visits = v; best_slot = k}
 		}
 		for k in 0 ..< n {
@@ -53,7 +53,7 @@ get_action_probabilities :: proc(
 	total := f32(0)
 	for k in 0 ..< n {
 		ci := root.child[k]
-		visits := 0 if ci < 0 else t.nodes[ci].N
+		visits := 0 if ci < 0 else t.node_N[ci]
 		val := math.pow(f32(visits), 1.0 / temperature)
 		out[root.actions[k]] = val
 		total += val
@@ -95,11 +95,11 @@ select_action :: proc(t: ^Tree, temperature: f32 = 1.0) -> int {
 }
 
 get_root_visit_count :: proc(t: ^Tree) -> int {
-	return t.nodes[t.root_idx].N
+	return t.node_N[t.root_idx]
 }
 
 get_root_q_value :: proc(t: ^Tree) -> f32 {
-	return t.nodes[t.root_idx].Q
+	return t.node_Q[t.root_idx]
 }
 
 get_child_visit_counts :: proc(t: ^Tree, allocator := context.allocator) -> map[int]int {
@@ -107,7 +107,7 @@ get_child_visit_counts :: proc(t: ^Tree, allocator := context.allocator) -> map[
 	out := make(map[int]int, len(root.actions), allocator)
 	for k in 0 ..< len(root.actions) {
 		ci := root.child[k]
-		if ci >= 0 {out[root.actions[k]] = t.nodes[ci].N}
+		if ci >= 0 {out[root.actions[k]] = t.node_N[ci]}
 	}
 	return out
 }
@@ -117,7 +117,7 @@ get_child_q_values :: proc(t: ^Tree, allocator := context.allocator) -> map[int]
 	out := make(map[int]f32, len(root.actions), allocator)
 	for k in 0 ..< len(root.actions) {
 		ci := root.child[k]
-		if ci >= 0 {out[root.actions[k]] = t.nodes[ci].Q}
+		if ci >= 0 {out[root.actions[k]] = t.node_Q[ci]}
 	}
 	return out
 }

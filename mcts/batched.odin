@@ -43,16 +43,19 @@ Pending_Leaf :: struct {
 @(private = "file")
 select_slot_puct_vloss :: proc(t: ^Tree, node_idx: int) -> int {
 	node := &t.nodes[node_idx]
+	node_N_arr := t.node_N
+	node_Nv_arr := t.node_N_virt
+	node_Q_arr := t.node_Q
 	total_visits := 0
 	for k in 0 ..< len(node.actions) {
 		ci := node.child[k]
-		if ci >= 0 {total_visits += t.nodes[ci].N + t.nodes[ci].N_virt}
+		if ci >= 0 {total_visits += node_N_arr[ci] + node_Nv_arr[ci]}
 	}
 	sqrt_total := math.sqrt(f32(total_visits) + 1.0)
 
 	// Same branchless-argmax shape as select_slot_puct: ternaries lower to CMOV,
 	// and child presence collapses to a mask so the inner loop has no
-	// data-dependent control flow.
+	// data-dependent control flow. Hot fields read from SoA slices on the Tree.
 	best_slot := 0
 	best_score := f32(min(f32))
 	c_puct := t.config.c_puct
@@ -61,10 +64,9 @@ select_slot_puct_vloss :: proc(t: ^Tree, node_idx: int) -> int {
 		ci := node.child[k]
 		has_child := ci >= 0
 		safe_ci := ci if has_child else 0
-		child := &t.nodes[safe_ci]
-		q  := child.Q      if has_child else 0
-		n  := child.N      if has_child else 0
-		nv := child.N_virt if has_child else 0
+		q  := node_Q_arr[safe_ci]  if has_child else 0
+		n  := node_N_arr[safe_ci]  if has_child else 0
+		nv := node_Nv_arr[safe_ci] if has_child else 0
 		n_eff := f32(n + nv)
 		q_eff := (q * f32(n)) / n_eff if n_eff > 0 else 0.0
 		u := c_puct * prior * sqrt_total / (1.0 + n_eff)
@@ -132,7 +134,7 @@ descend_one :: proc(t: ^Tree) -> Pending_Leaf {
 		current = child_idx
 	}
 
-	for idx in path {t.nodes[idx].N_virt += 1}
+	for idx in path {t.node_N_virt[idx] += 1}
 
 	#reverse for d in deltas {t.game.undo_move(t.working_state, d)}
 
@@ -156,7 +158,12 @@ run_simulations_batched :: proc(
 	free_all(t.scratch_allocator)
 	if num_simulations > 0 {
 		want := len(t.nodes) + min(num_simulations, 1 << 20)
-		if cap(t.nodes) < want {reserve(&t.nodes, want)}
+		if cap(t.nodes) < want {
+			reserve(&t.nodes, want)
+			reserve(&t.node_N, want)
+			reserve(&t.node_N_virt, want)
+			reserve(&t.node_Q, want)
+		}
 	}
 	n_sims := num_simulations
 	if len(t.config.pcr_sims) > 0 {
@@ -272,9 +279,9 @@ run_simulations_batched :: proc(
 				}
 			}
 			#reverse for idx in pl.path {
-				t.nodes[idx].N_virt -= 1
-				t.nodes[idx].N += 1
-				t.nodes[idx].Q += (U - t.nodes[idx].Q) / f32(t.nodes[idx].N)
+				t.node_N_virt[idx] -= 1
+				t.node_N[idx] += 1
+				t.node_Q[idx] += (U - t.node_Q[idx]) / f32(t.node_N[idx])
 				U = 1.0 - U
 			}
 			completed += 1

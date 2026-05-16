@@ -43,10 +43,12 @@ Evaluator :: #type proc(
 @(private)
 select_slot_puct :: proc(t: ^Tree, node_idx: int) -> int {
 	node := &t.nodes[node_idx]
+	node_N_arr := t.node_N
+	node_Q_arr := t.node_Q
 	total_visits := 0
 	for k in 0 ..< len(node.actions) {
 		ci := node.child[k]
-		if ci >= 0 {total_visits += t.nodes[ci].N}
+		if ci >= 0 {total_visits += node_N_arr[ci]}
 	}
 	sqrt_total := math.sqrt(f32(total_visits) + 1.0)
 
@@ -54,6 +56,9 @@ select_slot_puct :: proc(t: ^Tree, node_idx: int) -> int {
 	// on x86, removing a data-dependent branch from each iteration of the tight
 	// inner loop. Likewise, fold the ci>=0 child-presence check into a single
 	// mask so the body has no control flow at all.
+	//
+	// Reads child N/Q from parallel SoA slices on the Tree — touches only the
+	// 4 + 8 = 12 hot bytes per child, not the full ~100-byte Node struct.
 	best_slot := 0
 	best_score := f32(min(f32))
 	c_puct := t.config.c_puct
@@ -64,9 +69,8 @@ select_slot_puct :: proc(t: ^Tree, node_idx: int) -> int {
 		// Index a valid node either way (root @0 always exists); mask the
 		// Q/N contributions to zero when no child is present.
 		safe_ci := ci if has_child else 0
-		child := &t.nodes[safe_ci]
-		q := child.Q if has_child else 0
-		n := child.N if has_child else 0
+		q := node_Q_arr[safe_ci] if has_child else 0
+		n := node_N_arr[safe_ci] if has_child else 0
 		u := c_puct * prior * sqrt_total / (1.0 + f32(n))
 		score := q + u
 		is_better := score > best_score
@@ -111,7 +115,7 @@ perform_playout :: proc(t: ^Tree, node_idx: int, evaluator: Evaluator, user_data
 
 	if t.nodes[node_idx].is_terminal {
 		U = terminal_value_for_node(t, node_idx)
-	} else if t.nodes[node_idx].N == 0 {
+	} else if t.node_N[node_idx] == 0 {
 		v_theta := expand_node(t, node_idx, evaluator, user_data)
 
 		cp := t.game.current_player(t.working_state)
@@ -153,8 +157,8 @@ perform_playout :: proc(t: ^Tree, node_idx: int, evaluator: Evaluator, user_data
 		U = 1.0 - child_value
 	}
 
-	t.nodes[node_idx].N += 1
-	t.nodes[node_idx].Q = t.nodes[node_idx].Q + (U - t.nodes[node_idx].Q) / f32(t.nodes[node_idx].N)
+	t.node_N[node_idx] += 1
+	t.node_Q[node_idx] += (U - t.node_Q[node_idx]) / f32(t.node_N[node_idx])
 	return U
 }
 
@@ -229,7 +233,12 @@ run_simulations :: proc(t: ^Tree, num_simulations: int, evaluator: Evaluator, us
 	// num_simulations arg doesn't pre-burn megabytes of node storage.
 	if num_simulations > 0 {
 		want := len(t.nodes) + min(num_simulations, 1 << 20)
-		if cap(t.nodes) < want {reserve(&t.nodes, want)}
+		if cap(t.nodes) < want {
+			reserve(&t.nodes, want)
+			reserve(&t.node_N, want)
+			reserve(&t.node_N_virt, want)
+			reserve(&t.node_Q, want)
+		}
 	}
 	n_sims := num_simulations
 	if len(t.config.pcr_sims) > 0 {

@@ -13,10 +13,10 @@ v0.1.0. Core + three demo games + 45 passing tests under Odin's memory tracker.
 9×9 Go, 1600 sims/move × 32 moves, uniform-policy evaluator, single-thread, `-o:speed -no-bounds-check`:
 
 ```
-mcts-odin:        13,602 ± 87 sims/s    (1.61x autogodin cpp, 4.76x autogodin odin)
+mcts-odin:        13,837 ± 42 sims/s    (1.63x autogodin cpp, 4.84x autogodin odin)
 ```
 
-For reference, [autogodin](https://github.com/phiat/autogodin)'s comparable bench (same workload, evaluator marshalled through a Python callback) reports `cpp: 8,470` and `odin: 2,859` sims/s. The numbers aren't strictly comparable — mcts-odin's bench runs the evaluator inline in Odin without FFI — but the 4.76× over autogodin's own Odin port shows the cumulative impact of the do/undo lift, packed slot storage, linear-space priors (no PUCT-loop `math.exp`), per-Tree scratch arena, subtree reuse, and branchless argmax.
+For reference, [autogodin](https://github.com/phiat/autogodin)'s comparable bench (same workload, evaluator marshalled through a Python callback) reports `cpp: 8,470` and `odin: 2,859` sims/s. The numbers aren't strictly comparable — mcts-odin's bench runs the evaluator inline in Odin without FFI — but the 4.84× over autogodin's own Odin port shows the cumulative impact of the do/undo lift, packed slot storage, SoA hot fields, linear-space priors (no PUCT-loop `math.exp`), per-Tree scratch arena, subtree reuse, and branchless argmax.
 
 ## Quick start
 
@@ -42,6 +42,55 @@ main :: proc() {
 
 `my_evaluator` is your value/policy function — see [`examples/tictactoe_selfplay.odin`](examples/tictactoe_selfplay.odin) for a complete runnable example.
 
+**Evaluator must mask to legal moves.** The MCTS hot path does not re-check legality before calling `do_move` on the chosen slot — a nonzero prior for an illegal action will be silently selected and produce undefined behaviour (panic / no-op / corrupted state, depending on how the game implements `do_move`). NN-backed evaluators must mask their logits to legal moves before normalisation.
+
+## Architecture
+
+```
+┌──────────────────────── Tree ───────────────────────┐
+│                                                     │
+│  working_state ───┐                                 │
+│  (owned by tree)  │   single state mutated in       │
+│                   │   place via do_move / undo_move │
+│                   ▼                                 │
+│           ┌─── nodes[] ────┐                        │
+│           │ Node 0 (root)  │       Hot fields in    │
+│           │  ├─ actions[]  │       parallel SoA on  │
+│           │  ├─ priors[]   │       the Tree:        │
+│           │  └─ child[]    │         node_N[]       │
+│           ├────────────────┤         node_N_virt[]  │
+│           │ Node 1, 2, …   │         node_Q[]       │
+│           │ (packed slots) │                        │
+│           └────────────────┘                        │
+│                                                     │
+│  arena            permanent: nodes, slot arrays     │
+│  scratch_arena    per-run: descent paths, deltas    │
+│                                                     │
+└─────────────────────────────────────────────────────┘
+```
+
+Three deliberate choices drive the throughput:
+
+- **No per-node state copies.** Nodes are pure tree bookkeeping; the tree threads `working_state` through `do_move` on the way down and `undo_move` on the way up. A Go-board clone is several times costlier than a do/undo pair, and a deep tree creates thousands of nodes.
+- **Packed slot storage.** Per-node `actions[k] / priors[k] / child[k]` are tightly packed slices, sized at first expansion. Hot fields (`N`, `N_virt`, `Q`) live in parallel arrays on the `Tree`, indexed by node index — the PUCT inner loop reads ~12 bytes per child rather than chasing a full Node struct on every random-access probe.
+- **Two arenas per tree.** A growing arena owns nodes and slot arrays for the lifetime of the tree; a separate scratch arena is `free_all`-reset at the top of every `run_simulations` call. The caller's `context.temp_allocator` is never touched.
+
+## Sequential vs batched
+
+```odin
+// Sequential — one evaluator call per leaf. Fine for CPU-side policies,
+// uniform priors, or any fast in-process value function.
+mcts.run_simulations(&tree, 1600, my_evaluator, &g)
+
+// Batched — leaf-parallel with virtual loss; the evaluator gets a slice
+// of cloned leaf states per call. Use when the evaluator is expensive
+// (e.g. a GPU NN forward pass) and benefits from large batch sizes.
+mcts.run_simulations_batched(&tree, 1600, batch_size = 16,
+                              my_batched_evaluator, &g)
+```
+
+The two paths share the same tree, the same Game vtable, and the same readouts (`select_action`, visit counts, Q values, priors).
+
 ## The Game vtable
 
 ```odin
@@ -60,7 +109,7 @@ Game :: struct {
 
 The MCTS core uses `do_move`/`undo_move` on a single working state per tree — it never clones the state at internal nodes. This is the key performance lever: a Go-board clone (board + Zobrist history map) is several times costlier than a `do_move`/`undo_move` pair, and a deep tree creates thousands of nodes.
 
-See [`docs/EMBEDDING.md`](docs/EMBEDDING.md) for the full contract, evaluator signatures (sequential + batched), tuning knobs, and memory model.
+See [`docs/EMBEDDING.md`](docs/EMBEDDING.md) for the full contract, evaluator signatures (sequential + batched), subtree reuse (`mcts.reuse_root(action)`), tuning knobs, and memory model.
 
 ## Layout
 
@@ -78,7 +127,7 @@ games/
   go/               9×9 / 19×19 with Zobrist PSK, KataGo no-suicide, Tromp-Taylor scoring
 tests/            test suite (run with: odin test tests)
 examples/         small runnable examples
-bench/            (planned) performance benchmarks
+bench/            9×9 Go throughput micro-bench vs autogodin baselines
 scripts/          build / test helpers
 docs/             EMBEDDING.md and friends
 ```

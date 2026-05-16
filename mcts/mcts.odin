@@ -53,10 +53,11 @@ default_config :: proc() -> Config {
 // One tree node. Carries no copy of the game state — state is reconstructed
 // on demand by descending from root with do_move along the recorded action
 // path, and unwound with undo_move on the way back.
+//
+// Hot fields (N, N_virt, Q) live in parallel arrays on the Tree (t.node_N,
+// t.node_N_virt, t.node_Q) so the PUCT inner loop reads them with a much
+// tighter cache footprint than chasing the full Node struct on every child.
 Node :: struct {
-	N:                int,
-	N_virt:           int,
-	Q:                f32,
 	first_eval_value: f32,
 	has_eval:         bool,
 	expanded:         bool,    // true once the evaluator's policy has been folded into actions/priors
@@ -85,6 +86,15 @@ Node :: struct {
 
 Tree :: struct {
 	nodes:     [dynamic]Node,
+
+	// Hot fields in parallel slices, indexed by node index. Kept in lock-step
+	// with `nodes`: every append/reserve on `nodes` does the same on all three.
+	// PUCT reads child Q and N via these instead of `t.nodes[ci].{Q,N}`, which
+	// would drag in the full Node struct on every random-access child probe.
+	node_N:      [dynamic]int,
+	node_N_virt: [dynamic]int,
+	node_Q:      [dynamic]f32,
+
 	config:    Config,
 	game:      ^Game,
 	rng_state: rand.Default_Random_State,
@@ -142,6 +152,9 @@ init :: proc(t: ^Tree, game: ^Game, root_state: rawptr, config: Config, seed: u6
 	t.scratch_allocator = virtual.arena_allocator(&t.scratch_arena)
 
 	t.nodes = make([dynamic]Node, 0, 64, t.allocator)
+	t.node_N      = make([dynamic]int, 0, 64, t.allocator)
+	t.node_N_virt = make([dynamic]int, 0, 64, t.allocator)
+	t.node_Q      = make([dynamic]f32, 0, 64, t.allocator)
 	t.eval_a_buf = make([]int, game.max_actions, t.allocator)
 	t.eval_p_buf = make([]f32, game.max_actions, t.allocator)
 	t.rng_state = rand.create(seed if seed != 0 else 0xC0FFEE_DECADE)
@@ -159,6 +172,9 @@ init :: proc(t: ^Tree, game: ^Game, root_state: rawptr, config: Config, seed: u6
 	}
 	if root.is_terminal {root.terminal_v_raw = game.terminal_value(root_state)}
 	append(&t.nodes, root)
+	append(&t.node_N, 0)
+	append(&t.node_N_virt, 0)
+	append(&t.node_Q, f32(0))
 }
 
 destroy :: proc(t: ^Tree) {
@@ -189,6 +205,9 @@ create_node :: proc(t: ^Tree, parent_idx: int, action: int, player_at_parent: i3
 	}
 	if n.is_terminal {n.terminal_v_raw = t.game.terminal_value(t.working_state)}
 	append(&t.nodes, n)
+	append(&t.node_N, 0)
+	append(&t.node_N_virt, 0)
+	append(&t.node_Q, f32(0))
 	return idx
 }
 
@@ -251,6 +270,9 @@ reuse_root :: proc(t: ^Tree, action: int) -> bool {
 		}
 		if n.is_terminal {n.terminal_v_raw = t.game.terminal_value(t.working_state)}
 		append(&t.nodes, n)
+		append(&t.node_N, 0)
+		append(&t.node_N_virt, 0)
+		append(&t.node_Q, f32(0))
 		t.root_idx = idx
 		return false
 	}

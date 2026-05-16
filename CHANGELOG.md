@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented here. Versions follow [SemVer](https://semver.org/) once 1.0 lands; pre-1.0 is `0.MINOR.PATCH-stage`.
 
+## [Unreleased]
+
+### Changed
+
+- **SoA hot fields on the Tree.** `Node.N`, `Node.N_virt`, and `Node.Q` moved into parallel `[dynamic]` slices on the `Tree` (`t.node_N`, `t.node_N_virt`, `t.node_Q`). The PUCT inner loop reads ~12 hot bytes per child probe instead of dragging in the full ~100-byte Node struct on every random-access lookup. Bench: 13,605 ± 199 → 13,837 ± 42 sims/s on the 9×9 Go workload (small mean win, 4.7× tighter variance — disjoint 95% CIs). Closes mcts-odin-z24.3.
+
 ## [0.1.0] — 2026-05-16
 
 Initial release. Extracted from [autogodin](https://github.com/phiat/autogodin) and reshaped into a stand-alone, game-agnostic Odin MCTS package.
