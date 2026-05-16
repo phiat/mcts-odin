@@ -65,7 +65,3 @@ sample_packed_action :: proc(actions: []int, probs: []f32, temperature: f32, scr
 	return actions[n - 1]
 }
 
-@(private)
-log_safe :: proc(x: f32) -> f32 {
-	return math.ln(x + 1e-8)
-}

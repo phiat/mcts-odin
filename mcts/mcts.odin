@@ -16,7 +16,7 @@ import "core:mem/virtual"
 //     down (do_move) and restore it on the way up (undo_move). No per-node
 //     state pointer; nodes are pure tree-bookkeeping and never carry a copy
 //     of the game state.
-//   - Each Node carries a packed action list (actions/logP/child slices), all
+//   - Each Node carries a packed action list (actions/priors/child slices), all
 //     sized to the policy length at first evaluation. PUCT scan is a single
 //     tight loop over these arrays — no map hashes on the hot path.
 //   - is_terminal and a perspective-raw terminal_value are cached on each
@@ -59,7 +59,7 @@ Node :: struct {
 	Q:                f32,
 	first_eval_value: f32,
 	has_eval:         bool,
-	expanded:         bool,    // true once the evaluator's policy has been folded into actions/logP
+	expanded:         bool,    // true once the evaluator's policy has been folded into actions/priors
 	is_terminal:      bool,    // cached at node creation
 	terminal_v_raw:   f32,     // terminal_value from this node's current_player perspective (cached)
 
@@ -73,10 +73,13 @@ Node :: struct {
 	// masks their policy to legal moves.
 	//
 	//   actions[k] -> the action id at slot k
-	//   logP[k]    -> log-prior (Dirichlet-mixed at the root)
+	//   priors[k]  -> linear-space prior probability (Dirichlet-mixed at root)
 	//   child[k]   -> child node index, or -1 if this slot has never been visited
+	//
+	// Stored in linear space (not log) so the PUCT inner loop reads them
+	// directly without a math.exp per slot per call.
 	actions: []int,
-	logP:    []f32,
+	priors:  []f32,
 	child:   []int,
 }
 
@@ -93,7 +96,7 @@ Tree :: struct {
 	// relative to root_idx.
 	root_idx:    int,
 	// True once Dirichlet noise has been mixed into the current root's
-	// logP for this search round. Cleared by reuse_root so the next
+	// priors for this search round. Cleared by reuse_root so the next
 	// run_simulations call re-applies noise to the new root.
 	root_noised: bool,
 

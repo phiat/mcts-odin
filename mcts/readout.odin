@@ -134,12 +134,12 @@ get_child_first_eval_values :: proc(t: ^Tree, allocator := context.allocator) ->
 	return out
 }
 
-// Root priors (exponentiated logP — i.e., post-Dirichlet if noise was added).
+// Root priors (post-Dirichlet if noise was added).
 get_root_policy_priors :: proc(t: ^Tree, allocator := context.allocator) -> map[int]f32 {
 	root := &t.nodes[t.root_idx]
 	out := make(map[int]f32, len(root.actions), allocator)
 	for k in 0 ..< len(root.actions) {
-		out[root.actions[k]] = math.exp(root.logP[k])
+		out[root.actions[k]] = root.priors[k]
 	}
 	return out
 }

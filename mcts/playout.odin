@@ -58,7 +58,7 @@ select_slot_puct :: proc(t: ^Tree, node_idx: int) -> int {
 	best_score := f32(min(f32))
 	c_puct := t.config.c_puct
 	for k in 0 ..< len(node.actions) {
-		prior := math.exp(node.logP[k])
+		prior := node.priors[k]
 		ci := node.child[k]
 		has_child := ci >= 0
 		// Index a valid node either way (root @0 always exists); mask the
@@ -77,7 +77,7 @@ select_slot_puct :: proc(t: ^Tree, node_idx: int) -> int {
 }
 
 // Expand a leaf: call the evaluator on t.working_state, allocate the packed
-// slot arrays in the tree arena, fill logP, mark expanded. Returns v_theta
+// slot arrays in the tree arena, fill priors, mark expanded. Returns v_theta
 // from working_state's current_player perspective (caller flips if needed).
 @(private)
 expand_node :: proc(t: ^Tree, node_idx: int, evaluator: Evaluator, user_data: rawptr) -> f32 {
@@ -85,15 +85,15 @@ expand_node :: proc(t: ^Tree, node_idx: int, evaluator: Evaluator, user_data: ra
 	n := evaluator(t.working_state, t.eval_a_buf, t.eval_p_buf, &v, user_data)
 
 	actions := make([]int, n, t.allocator)
-	logP    := make([]f32, n, t.allocator)
+	priors  := make([]f32, n, t.allocator)
 	child   := make([]int, n, t.allocator)
 	for k in 0 ..< n {
 		actions[k] = t.eval_a_buf[k]
-		logP[k]    = log_safe(t.eval_p_buf[k])
+		priors[k]  = t.eval_p_buf[k]
 		child[k]   = -1
 	}
 	t.nodes[node_idx].actions = actions
-	t.nodes[node_idx].logP    = logP
+	t.nodes[node_idx].priors  = priors
 	t.nodes[node_idx].child   = child
 	t.nodes[node_idx].expanded = true
 	return v
@@ -197,7 +197,7 @@ fast_rollout :: proc(
 	return value
 }
 
-// Sample Dirichlet noise over the root's slot list and mix it into logP.
+// Sample Dirichlet noise over the root's slot list and mix it into priors.
 // alpha and weight come from t.config. No-op if root has no slots yet.
 @(private)
 add_dirichlet_noise :: proc(t: ^Tree, alpha, weight: f32) {
@@ -215,9 +215,7 @@ add_dirichlet_noise :: proc(t: ^Tree, alpha, weight: f32) {
 	for k in 0 ..< n {noise[k] /= sum}
 
 	for k in 0 ..< n {
-		prior := math.exp(root.logP[k])
-		noisy := (1.0 - weight) * prior + weight * noise[k]
-		root.logP[k] = log_safe(noisy)
+		root.priors[k] = (1.0 - weight) * root.priors[k] + weight * noise[k]
 	}
 }
 

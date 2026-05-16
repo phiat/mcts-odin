@@ -57,7 +57,7 @@ select_slot_puct_vloss :: proc(t: ^Tree, node_idx: int) -> int {
 	best_score := f32(min(f32))
 	c_puct := t.config.c_puct
 	for k in 0 ..< len(node.actions) {
-		prior := math.exp(node.logP[k])
+		prior := node.priors[k]
 		ci := node.child[k]
 		has_child := ci >= 0
 		safe_ci := ci if has_child else 0
@@ -182,15 +182,15 @@ run_simulations_batched :: proc(
 		evaluator(states, a_views, p_views, counts, values, user_data)
 		n := counts[0]
 		actions := make([]int, n, t.allocator)
-		logP    := make([]f32, n, t.allocator)
+		priors  := make([]f32, n, t.allocator)
 		child   := make([]int, n, t.allocator)
 		for k in 0 ..< n {
 			actions[k] = t.eval_a_buf[k]
-			logP[k]    = log_safe(t.eval_p_buf[k])
+			priors[k]  = t.eval_p_buf[k]
 			child[k]   = -1
 		}
 		t.nodes[t.root_idx].actions = actions
-		t.nodes[t.root_idx].logP    = logP
+		t.nodes[t.root_idx].priors  = priors
 		t.nodes[t.root_idx].child   = child
 		t.nodes[t.root_idx].expanded = true
 	}
@@ -249,15 +249,15 @@ run_simulations_batched :: proc(
 				v_theta := values[pl.eval_slot]
 				if !t.nodes[pl.leaf_idx].expanded {
 					actions := make([]int, n, t.allocator)
-					logP    := make([]f32, n, t.allocator)
+					priors  := make([]f32, n, t.allocator)
 					child   := make([]int, n, t.allocator)
 					for k in 0 ..< n {
 						actions[k] = a_buf[pl.eval_slot][k]
-						logP[k]    = log_safe(p_buf[pl.eval_slot][k])
+						priors[k]  = p_buf[pl.eval_slot][k]
 						child[k]   = -1
 					}
 					t.nodes[pl.leaf_idx].actions = actions
-					t.nodes[pl.leaf_idx].logP    = logP
+					t.nodes[pl.leaf_idx].priors  = priors
 					t.nodes[pl.leaf_idx].child   = child
 					t.nodes[pl.leaf_idx].expanded = true
 				}
