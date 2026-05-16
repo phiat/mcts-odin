@@ -2,9 +2,9 @@
 
 All notable changes to this project will be documented here. Versions follow [SemVer](https://semver.org/) once 1.0 lands; pre-1.0 is `0.MINOR.PATCH-stage`.
 
-## [0.1.0-dev] — unreleased
+## [0.1.0] — 2026-05-16
 
-Initial extraction from [autogodin](https://github.com/phiat/autogodin), reshaped into a stand-alone, game-agnostic Odin MCTS package.
+Initial release. Extracted from [autogodin](https://github.com/phiat/autogodin) and reshaped into a stand-alone, game-agnostic Odin MCTS package.
 
 ### Added
 
