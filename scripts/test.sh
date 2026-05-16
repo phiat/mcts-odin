@@ -12,6 +12,7 @@ SUITES=(
 	tests
 	tests/games/breakthrough
 	tests/games/connect_four
+	tests/games/dots_and_boxes
 	tests/games/go
 	tests/games/gomoku
 	tests/games/hex
