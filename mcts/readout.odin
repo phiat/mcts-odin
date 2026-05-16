@@ -1,7 +1,6 @@
 package mcts
 
 import "core:math"
-import "core:math/rand"
 
 // ============================================================================
 // Action selection + tree introspection.
@@ -80,7 +79,6 @@ get_action_probabilities :: proc(
 //
 // API stability: stable.
 select_action :: proc(t: ^Tree, temperature: f32 = 1.0) -> int {
-	use_tree_rng(t)
 	root := &t.nodes[t.root_idx]
 	n := len(root.actions)
 	if n == 0 {return -1}
@@ -101,7 +99,7 @@ select_action :: proc(t: ^Tree, temperature: f32 = 1.0) -> int {
 		if root.child[k] >= 0 {any_child = true; break}
 	}
 	if !any_child {
-		return root.actions[int(rand.float32() * f32(n))]
+		return root.actions[int(xoshiro_next_f32(&t.rng_state) * f32(n))]
 	}
 
 	work := make([]f32, n, t.scratch_allocator)
@@ -116,10 +114,10 @@ select_action :: proc(t: ^Tree, temperature: f32 = 1.0) -> int {
 		total += v
 	}
 	if total == 0 {
-		return root.actions[int(rand.float32() * f32(n))]
+		return root.actions[int(xoshiro_next_f32(&t.rng_state) * f32(n))]
 	}
 
-	r := rand.float32()
+	r := xoshiro_next_f32(&t.rng_state)
 	cum := f32(0)
 	for k in 0 ..< n {
 		cum += work[k] / total

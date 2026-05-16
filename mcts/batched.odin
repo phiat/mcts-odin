@@ -169,7 +169,6 @@ run_simulations_batched :: proc(
 	evaluator:        Evaluator_Batched,
 	user_data:        rawptr = nil,
 ) {
-	use_tree_rng(t)
 	free_all(t.scratch_allocator)
 	n_sims := resolve_n_sims(t, num_simulations)
 

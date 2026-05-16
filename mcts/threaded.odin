@@ -3,7 +3,6 @@ package mcts
 import "base:intrinsics"
 import "base:runtime"
 import "core:math"
-import "core:math/rand"
 import "core:mem/virtual"
 import "core:sync"
 import "core:thread"
@@ -60,7 +59,8 @@ Worker :: struct {
 	scratch_allocator: runtime.Allocator,
 	eval_a_buf:     []int,
 	eval_p_buf:     []f32,
-	rng_state:      rand.Default_Random_State,
+	rng_state:      Xoshiro256pp,
+	rng_normal_cache: NormalCache,
 	evaluator:      Evaluator,
 	user_data:      rawptr,
 
@@ -86,7 +86,6 @@ run_simulations_threaded :: proc(
 	evaluator:       Evaluator,
 	user_data:       rawptr = nil,
 ) {
-	use_tree_rng(t)
 	free_all(t.scratch_allocator)
 	n_sims := resolve_n_sims(t, num_simulations)
 
@@ -107,7 +106,7 @@ run_simulations_threaded :: proc(
 	expand_mutex: sync.Mutex
 
 	cap_n := t.game.max_actions
-	base_seed := rand.uint64()
+	base_seed := xoshiro_next_u64(&t.rng_state)
 
 	for i in 0 ..< n {
 		w := &workers[i]
@@ -117,7 +116,7 @@ run_simulations_threaded :: proc(
 		w.scratch_allocator = virtual.arena_allocator(&w.scratch_arena)
 		w.eval_a_buf = make([]int, cap_n, w.scratch_allocator)
 		w.eval_p_buf = make([]f32, cap_n, w.scratch_allocator)
-		w.rng_state = rand.create(base_seed + u64(i) + 1)
+		xoshiro_seed(&w.rng_state, base_seed + u64(i) + 1)
 		w.evaluator = evaluator
 		w.user_data = user_data
 		w.sims_target = n_sims

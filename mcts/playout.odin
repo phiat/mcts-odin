@@ -197,7 +197,7 @@ fast_rollout :: proc(
 	for !t.game.is_terminal(t.working_state) && depth < remaining_depth {
 		n := evaluator(t.working_state, t.eval_a_buf, t.eval_p_buf, &value, user_data)
 		if n == 0 {break}
-		action := sample_packed_action(t.eval_a_buf[:n], t.eval_p_buf[:n], t.config.rollout_temperature, t.scratch_allocator)
+		action := sample_packed_action(&t.rng_state, t.eval_a_buf[:n], t.eval_p_buf[:n], t.config.rollout_temperature, t.scratch_allocator)
 		d := t.game.do_move(t.working_state, action)
 		append(&deltas, d)
 		depth += 1
@@ -227,7 +227,7 @@ add_dirichlet_noise :: proc(t: ^Tree, alpha, weight: f32) {
 	defer delete(noise, t.scratch_allocator)
 	sum := f32(0)
 	for k in 0 ..< n {
-		noise[k] = gamma_sample(alpha)
+		noise[k] = gamma_sample(&t.rng_state, &t.rng_normal_cache, alpha)
 		sum += noise[k]
 	}
 	for k in 0 ..< n {noise[k] /= sum}
@@ -242,7 +242,6 @@ add_dirichlet_noise :: proc(t: ^Tree, alpha, weight: f32) {
 //
 // API stability: stable.
 run_simulations :: proc(t: ^Tree, num_simulations: int, evaluator: Evaluator, user_data: rawptr = nil) {
-	use_tree_rng(t)
 	free_all(t.scratch_allocator)
 	n_sims := resolve_n_sims(t, num_simulations)
 

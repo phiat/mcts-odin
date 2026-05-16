@@ -1,7 +1,6 @@
 package mcts
 
 import "base:runtime"
-import "core:math/rand"
 import "core:mem/virtual"
 
 // ============================================================================
@@ -144,7 +143,8 @@ Tree :: struct {
 
 	config:    Config,
 	game:      ^Game,
-	rng_state: rand.Default_Random_State,
+	rng_state: Xoshiro256pp,
+	rng_normal_cache: NormalCache,
 
 	// Index of the current root within `nodes`. Always 0 immediately after
 	// init; can move when reuse_root is called between moves. Old root +
@@ -206,7 +206,7 @@ init :: proc(t: ^Tree, game: ^Game, root_state: rawptr, config: Config, seed: u6
 	t.node_Q      = make([dynamic]f32, 0, 64, t.allocator)
 	t.eval_a_buf = make([]int, game.max_actions, t.allocator)
 	t.eval_p_buf = make([]f32, game.max_actions, t.allocator)
-	t.rng_state = rand.create(seed if seed != 0 else 0xC0FFEE_DECADE)
+	xoshiro_seed(&t.rng_state, seed)
 
 	// Root perspective = the player NOT to move at root, so that values get
 	// flipped correctly on the way up: a value reported from side-to-move's
@@ -266,12 +266,6 @@ create_node :: proc(t: ^Tree, state: rawptr, parent_idx: int, action: int, playe
 	return idx
 }
 
-// Bind t's RNG state into the current context so transitive callees pick it up.
-@(private)
-use_tree_rng :: proc(t: ^Tree) {
-	context.random_generator = rand.default_random_generator(&t.rng_state)
-}
-
 // Shared preamble for the three run_simulations drivers. Reserves node-storage
 // capacity for the worst-case "one new node per sim" growth so the hot path
 // never realloc-copies the SoA arrays, then returns the effective sim count
@@ -290,7 +284,7 @@ resolve_n_sims :: proc(t: ^Tree, num_simulations: int) -> int {
 		}
 	}
 	if len(t.config.pcr_sims) == 0 {return num_simulations}
-	r := rand.float32()
+	r := xoshiro_next_f32(&t.rng_state)
 	cum := f32(0)
 	pick := len(t.config.pcr_sims) - 1
 	for i in 0 ..< len(t.config.pcr_probs) {
