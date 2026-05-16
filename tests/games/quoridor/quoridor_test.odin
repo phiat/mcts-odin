@@ -4,6 +4,18 @@ import "core:testing"
 import qd "../../../games/quoridor"
 import "../../../mcts"
 
+// Document the vtable contract: terminal_value returns 0.5 on non-terminal
+// states (the MCTS core relies on this — it only calls terminal_value after
+// is_terminal returns true, but a misbehaving consumer that calls early
+// should get the documented draw/non-terminal sentinel rather than UB).
+@(test)
+terminal_value_nonterminal_is_draw :: proc(t: ^testing.T) {
+	state := qd.new_state()
+	defer qd.free_state(state)
+	testing.expect_value(t, qd.is_terminal(state), false)
+	testing.expect_value(t, qd.terminal_value(state), f32(0.5))
+}
+
 @(test)
 opening_position :: proc(t: ^testing.T) {
 	state := qd.new_state()

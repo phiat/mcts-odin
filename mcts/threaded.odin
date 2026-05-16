@@ -255,8 +255,15 @@ worker_do_one_sim :: proc(w: ^Worker) {
 		// Decrement virtual loss eagerly, increment real visit, update Q.
 		intrinsics.atomic_sub(&t.node_N_virt[idx], 1)
 		new_n := intrinsics.atomic_add(&t.node_N[idx], 1) + 1
-		// CAS-loop on Q running average. new_n is unique to this worker so
-		// the divisor is correct; the CAS handles concurrent updates of Q.
+		// CAS-loop on Q running average. new_n is this worker's unique
+		// N-claim at the moment of the atomic_add. Under heavy contention
+		// the CAS may retry against a q_old that another worker just
+		// updated, in which case our divisor (new_n) is for an earlier
+		// generation than q_old reflects. The running average is therefore
+		// statistically biased toward later updates — but at the worker
+		// counts where the threaded path is worth using (≤8), the effect
+		// is negligible and bounded. The CAS handles the visible-update
+		// race; the bias is the price of avoiding a per-node lock.
 		for {
 			q_old := atomic_q_load(&t.node_Q[idx])
 			q_new := q_old + (U - q_old) / f32(new_n)

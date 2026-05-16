@@ -9,22 +9,7 @@ A generic, optimized Monte Carlo Tree Search package for [Odin](https://odin-lan
 
 Games plug in by implementing a small `Game` vtable; the core knows nothing about Go, chess, or any specific game. Ships with **tic-tac-toe**, **Connect Four**, **Reversi**, **Hex**, **Breakthrough**, **Gomoku**, **Dots and Boxes**, **Amazons**, **Quoridor**, and a **Go** (9×9 / 19×19) reference implementation.
 
-## Status
-
-v0.5.0. Core + ten demo games + 124 passing tests under Odin's memory tracker.
-
-### Throughput
-
-9×9 Go, 1600 sims/move × 32 moves, uniform-policy evaluator, single-thread, `-o:speed -no-bounds-check`:
-
-```
-mcts-odin (default):   ~108,000 sims/s    (~12.8x autogodin cpp, ~37.8x autogodin odin)
-```
-
-For reference, [autogodin](https://github.com/phiat/autogodin)'s comparable bench (same workload, evaluator marshalled through a Python callback) reports `cpp: 8,470` and `odin: 2,859` sims/s. The numbers aren't strictly comparable — mcts-odin runs its evaluator inline in Odin without FFI — but the cumulative gap reflects:
-
-- **MCTS core:** in-place do/undo (no per-node clones), packed slot storage with SoA hot fields (`N`, `N_virt`, `Q`), linear-space priors (no `math.exp` in the PUCT loop), branchless argmax, per-tree scratch arena, subtree reuse, FPU producing a broader/shallower tree, inlined xoshiro256++ RNG.
-- **Go board:** clone-free `is_legal_flat` (incremental Zobrist for PSK probes instead of board clones), open-addressing flat u64 hash set for PSK history, `BOARD_SIZE_HINT`-friendly hot-path helpers.
+*v0.5.0 · ten demo games · 124 tests passing under Odin's memory tracker.*
 
 ## Quick start
 
@@ -53,6 +38,19 @@ main :: proc() {
 `my_evaluator` is your value/policy function — see [`examples/tictactoe_selfplay.odin`](examples/tictactoe_selfplay.odin) for a complete runnable example with a uniform evaluator, and [`examples/nn_evaluator_skeleton.odin`](examples/nn_evaluator_skeleton.odin) for the policy/value plumbing pattern a real NN-backed evaluator needs (sequential and batched).
 
 **Evaluator must mask to legal moves.** The MCTS hot path does not re-check legality before calling `do_move` on the chosen slot — a nonzero prior for an illegal action will be silently selected and produce undefined behaviour (panic / no-op / corrupted state, depending on how the game implements `do_move`). NN-backed evaluators must mask their logits to legal moves before normalisation.
+
+## Throughput
+
+9×9 Go, 1600 sims/move × 32 moves, uniform-policy evaluator, single-thread, `-o:speed -no-bounds-check`:
+
+```
+mcts-odin (default):   ~108,000 sims/s    (~12.8x autogodin cpp, ~37.8x autogodin odin)
+```
+
+For reference, [autogodin](https://github.com/phiat/autogodin)'s comparable bench (same workload, evaluator marshalled through a Python callback) reports `cpp: 8,470` and `odin: 2,859` sims/s. The numbers aren't strictly comparable — mcts-odin runs its evaluator inline in Odin without FFI — but the cumulative gap reflects:
+
+- **MCTS core:** in-place do/undo (no per-node clones), packed slot storage with SoA hot fields (`N`, `N_virt`, `Q`), linear-space priors (no `math.exp` in the PUCT loop), branchless argmax, per-tree scratch arena, subtree reuse, FPU producing a broader/shallower tree, inlined xoshiro256++ RNG.
+- **Go board:** clone-free `is_legal_flat` (incremental Zobrist for PSK probes instead of board clones), open-addressing flat u64 hash set for PSK history, `BOARD_SIZE_HINT`-friendly hot-path helpers.
 
 ## Architecture
 
