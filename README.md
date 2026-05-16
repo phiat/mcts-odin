@@ -102,7 +102,7 @@ Near-linear scaling on slow evaluators (50 µs/call benchmark, 9×9 Go):
 microseconds per call) the mutex and CAS-loop contention can erase the
 speedup — use the sequential or batched paths there.
 
-The two paths share the same tree, the same Game vtable, and the same readouts (`select_action`, visit counts, Q values, priors).
+All three paths share the same tree, the same Game vtable, and the same readouts (`select_action`, visit counts, Q values, priors).
 
 ## The Game vtable
 
@@ -129,30 +129,40 @@ See [`docs/EMBEDDING.md`](docs/EMBEDDING.md) for the full contract, evaluator si
 ```
 mcts/             generic MCTS core (game-agnostic)
   game.odin         Game vtable + Move_Delta
-  mcts.odin         Tree / Node / Config + init / destroy
+  mcts.odin         Tree / Node / Config + init / destroy + shared driver helpers
   playout.odin      Evaluator type, sequential run_simulations + fast_rollout
   batched.odin      leaf-parallel run_simulations_batched (virtual loss)
+  threaded.odin     OS-thread parallel run_simulations_threaded (atomics + expand mutex)
   readout.odin      select_action + visit/Q/priors readouts
+  debug.odin        dump_tree_dot / dump_tree_json (experimental)
   rng.odin          gamma sampler + categorical helper
 games/
   tictactoe/        3×3 solved-game sanity demo
   connect_four/     7×6 column-drop demo
+  reversi/          8×8 Reversi (Othello) with zero-alloc Move_Delta packing
   go/               9×9 / 19×19 with Zobrist PSK, KataGo no-suicide, Tromp-Taylor scoring
-tests/            test suite (run with: odin test tests)
-examples/         small runnable examples
-bench/            9×9 Go throughput micro-bench vs autogodin baselines
+tests/            four test suites (run with: ./scripts/test.sh)
+examples/
+  tictactoe_selfplay.odin       full self-play loop
+  nn_evaluator_skeleton.odin    sequential + batched NN evaluator template
+bench/
+  bench.odin                    9×9 Go throughput micro-bench vs autogodin baselines
+  threaded/                     thread-scaling bench under a slow evaluator
 scripts/          build / test helpers
-docs/             EMBEDDING.md and friends
+docs/             EMBEDDING.md (full contract) + UPSTREAM.md (sync log)
 ```
 
 ## Build
 
 ```bash
 ./scripts/build.sh           # build/libmcts_odin.so
-./scripts/test.sh            # odin test tests, fails on leaks
+./scripts/test.sh            # all four suites, fails on leaks
 odin test tests/games/connect_four
+odin test tests/games/reversi
 odin test tests/games/go
 odin run examples/tictactoe_selfplay.odin -file
+odin run examples/nn_evaluator_skeleton.odin -file
+odin run bench/threaded -o:speed -no-bounds-check
 ```
 
 Optimization knobs:
