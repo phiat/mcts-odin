@@ -2,7 +2,9 @@
 
 All notable changes to this project will be documented here. Versions follow [SemVer](https://semver.org/) once 1.0 lands; pre-1.0 is `0.MINOR.PATCH-stage`.
 
-## [Unreleased]
+## [0.4.2] — 2026-05-16
+
+Patch release: three perf cleanups + one Go-board data-structure swap. No stable-surface changes. Bench ~108k sims/s on 9×9 Go (single-thread, uniform evaluator) vs ~105k at v0.4.1.
 
 ### Changed
 
