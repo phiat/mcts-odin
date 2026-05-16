@@ -47,7 +47,7 @@ clone_state :: proc(state: rawptr) -> rawptr {
 
 // MCTS pass id for this state's size.
 pass_id :: proc(b: ^GoBoard) -> int {
-	return b.size * b.size
+	return n_cells(b)
 }
 
 is_terminal :: proc(state: rawptr) -> bool {
@@ -73,7 +73,7 @@ terminal_value :: proc(state: rawptr) -> f32 {
 legal_actions :: proc(state: rawptr, out: ^[dynamic]int) {
 	b := cast(^GoBoard)state
 	if is_game_over(b) {return}
-	n := b.size * b.size
+	n := n_cells(b)
 	for i in 0 ..< n {
 		if is_legal_flat(b, i) {
 			append(out, i)
@@ -89,7 +89,7 @@ current_player :: proc(state: rawptr) -> i32 {
 
 mcts_do_move :: proc(state: rawptr, action: int) -> mcts.Move_Delta {
 	b := cast(^GoBoard)state
-	internal_action := PASS_ACTION if action == b.size * b.size else action
+	internal_action := PASS_ACTION if action == n_cells(b) else action
 
 	ad := new(Adapter_Delta)
 	ad.delta = do_move(b, internal_action, &b.captures)

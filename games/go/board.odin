@@ -16,6 +16,37 @@ NO_KO :: -1
 // between the two. Kept negative so it never collides with a real flat index.
 PASS_ACTION :: -1
 
+// Compile-time board-size hint. When > 0, hot paths fold b.size + b.size*b.size
+// to constants instead of loading the field + IMUL. Runtime board size still
+// works — the hint just enables better codegen for the common case.
+//
+//   odin build ... -define:BOARD_SIZE_HINT=9     # specialise for 9x9
+//   odin build ...                                # default 0 = fully runtime
+//
+// When set, make_go_board asserts the runtime size matches.
+BOARD_SIZE_HINT :: #config(BOARD_SIZE_HINT, 0)
+
+// n_cells: number of cells on the board. Folds to a compile-time constant
+// when BOARD_SIZE_HINT > 0.
+@(private)
+n_cells :: #force_inline proc "contextless" (b: ^GoBoard) -> int {
+	when BOARD_SIZE_HINT > 0 {
+		return BOARD_SIZE_HINT * BOARD_SIZE_HINT
+	} else {
+		return b.size * b.size
+	}
+}
+
+// board_dim: linear board size. Same compile-time-fold pattern as n_cells.
+@(private)
+board_dim :: #force_inline proc "contextless" (b: ^GoBoard) -> int {
+	when BOARD_SIZE_HINT > 0 {
+		return BOARD_SIZE_HINT
+	} else {
+		return b.size
+	}
+}
+
 Neighbors4 :: struct {
 	indices: [4]int,
 	count:   int,
@@ -94,6 +125,10 @@ GoBoard :: struct {
 }
 
 make_go_board :: proc(size: int = 9, komi: f32 = KOMI_DEFAULT, allocator := context.allocator) -> GoBoard {
+	when BOARD_SIZE_HINT > 0 {
+		assert(size == BOARD_SIZE_HINT,
+			"BOARD_SIZE_HINT was set at compile time; runtime board size must match")
+	}
 	context.allocator = allocator
 	n := size * size
 	b := GoBoard {
@@ -194,15 +229,16 @@ init_zobrist_table :: proc(t: ^BoardTables) {
 }
 
 flat_index :: proc(b: ^GoBoard, row, col: int) -> int {
-	return row * b.size + col
+	return row * board_dim(b) + col
 }
 
 row_col :: proc(b: ^GoBoard, flat: int) -> (row, col: int) {
-	return flat / b.size, flat % b.size
+	dim := board_dim(b)
+	return flat / dim, flat % dim
 }
 
 at :: proc(b: ^GoBoard, row, col: int) -> i8 {
-	return b.board[row * b.size + col]
+	return b.board[row * board_dim(b) + col]
 }
 
 at_flat :: proc(b: ^GoBoard, index: int) -> i8 {
@@ -234,7 +270,7 @@ get_group_and_liberties :: proc(
 	if color == EMPTY {
 		return
 	}
-	n := b.size * b.size
+	n := n_cells(b)
 	visited := make([]bool, n, context.temp_allocator)
 	defer delete(visited, context.temp_allocator)
 	lib_visited := make([]bool, n, context.temp_allocator)
@@ -275,11 +311,11 @@ remove_group :: proc(b: ^GoBoard, group: []int) -> int {
 }
 
 is_legal :: proc(b: ^GoBoard, row, col: int) -> bool {
-	return is_legal_flat(b, row * b.size + col)
+	return is_legal_flat(b, row * board_dim(b) + col)
 }
 
 is_legal_flat :: proc(b: ^GoBoard, index: int) -> bool {
-	if index < 0 || index >= b.size * b.size {return false}
+	if index < 0 || index >= n_cells(b) {return false}
 	if b.board[index] != EMPTY {return false}
 	if b.ko_point == index {return false}
 
@@ -333,7 +369,7 @@ is_legal_flat :: proc(b: ^GoBoard, index: int) -> bool {
 }
 
 get_legal_moves_flat :: proc(b: ^GoBoard, allocator := context.allocator) -> [dynamic]int {
-	n := b.size * b.size
+	n := n_cells(b)
 	moves := make([dynamic]int, 0, n, allocator)
 	for i in 0 ..< n {
 		if is_legal_flat(b, i) {
@@ -344,7 +380,7 @@ get_legal_moves_flat :: proc(b: ^GoBoard, allocator := context.allocator) -> [dy
 }
 
 play :: proc(b: ^GoBoard, row, col: int) -> bool {
-	return play_flat(b, row * b.size + col)
+	return play_flat(b, row * board_dim(b) + col)
 }
 
 play_flat :: proc(b: ^GoBoard, index: int) -> bool {
@@ -538,7 +574,7 @@ undo_move :: proc(b: ^GoBoard, delta: MoveDelta, captures: ^[dynamic]CaptureReco
 score :: proc(b: ^GoBoard) -> f32 {
 	black_score := f32(0)
 	white_score := b.komi
-	n := b.size * b.size
+	n := n_cells(b)
 	for i in 0 ..< n {
 		if b.board[i] == BLACK {
 			black_score += 1
@@ -601,7 +637,7 @@ get_winner :: proc(b: ^GoBoard) -> i8 {
 }
 
 set_from_array :: proc(b: ^GoBoard, data: []i8, to_play: i8) {
-	n := b.size * b.size
+	n := n_cells(b)
 	b.current_hash = 0
 	for i in 0 ..< n {
 		b.board[i] = data[i]
