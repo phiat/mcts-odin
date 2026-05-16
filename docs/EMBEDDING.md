@@ -103,6 +103,8 @@ For NN-backed search, use the batched variant — same surface, but states come 
 mcts.run_simulations_batched(&tree, 1000, batch_size = 32, my_batched_evaluator, my_user_data)
 ```
 
+See [`examples/nn_evaluator_skeleton.odin`](../examples/nn_evaluator_skeleton.odin) for a runnable template covering both paths (sequential + batched) with a mocked forward pass. It demonstrates legal-move masking, numerically-stable softmax over masked logits, and the `user_data` pattern for carrying model handles / scratch buffers through the evaluator — the parts that don't change when you swap the mock for ONNX Runtime, a Python FFI callback, or libtorch.
+
 ## 4. Exposing through C / Python
 
 The package is pure Odin. If you need a C-ABI or a Python ctypes wrapper, build a thin shim package in your own project that:

@@ -40,7 +40,7 @@ main :: proc() {
 }
 ```
 
-`my_evaluator` is your value/policy function — see [`examples/tictactoe_selfplay.odin`](examples/tictactoe_selfplay.odin) for a complete runnable example.
+`my_evaluator` is your value/policy function — see [`examples/tictactoe_selfplay.odin`](examples/tictactoe_selfplay.odin) for a complete runnable example with a uniform evaluator, and [`examples/nn_evaluator_skeleton.odin`](examples/nn_evaluator_skeleton.odin) for the policy/value plumbing pattern a real NN-backed evaluator needs (sequential and batched).
 
 **Evaluator must mask to legal moves.** The MCTS hot path does not re-check legality before calling `do_move` on the chosen slot — a nonzero prior for an illegal action will be silently selected and produce undefined behaviour (panic / no-op / corrupted state, depending on how the game implements `do_move`). NN-backed evaluators must mask their logits to legal moves before normalisation.
 

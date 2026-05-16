@@ -14,6 +14,8 @@ CLAUDE.md
 
 # Build artifacts
 build/
+bench/bench
+examples/*.bin
 *.so
 *.dylib
 *.dll
