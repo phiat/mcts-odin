@@ -2,6 +2,20 @@
 
 All notable changes to this project will be documented here. Versions follow [SemVer](https://semver.org/) once 1.0 lands; pre-1.0 is `0.MINOR.PATCH-stage`.
 
+## [0.5.0] — 2026-05-16
+
+Minor release: three new demo games + an onboarding guide. All additive — no existing API surface changed. Demo-game count goes 7 → 10; test suite 94 → 124.
+
+### Added
+
+- **Dots and Boxes** (`games/dots_and_boxes/`) — 4×4 dot grid / 3×3 = 9 boxes. First demo where **`to_play` does not flip every move**: closing a box gives the mover an extra turn, breaking the alternation invariant. Surfaces any latent assumption in the MCTS core that to_play parity tracks move count — exercised by `mcts_self_play_terminates`. Action space is 24 edge ids. Closes mcts-odin-ap2.
+
+- **Amazons** (`games/amazons/`) — 6×6 board, 2 amazons per side (Walter Zamkauskas, 1988). First demo with **two-stage moves** (queen slide + arrow shot, encoded as `from*36*36 + to*36 + arrow`) and a **terminal condition decided by `has_legal_move()`** rather than a board pattern or piece count. The loser is whoever is `to_play` when `is_term` flips true. Action space is 46 656 — most illegal at any moment; `legal_actions` enumerates only the legal triples. Closes mcts-odin-5dy.
+
+- **Quoridor** (`games/quoridor/`) — 5×5 board, 5 walls per side. First demo with a **heterogeneous action space** (25 pawn targets + 32 wall slots share one 57-wide id space) and **per-candidate BFS validation** for wall legality — every wall must preserve a path to goal row for both players. Pawn moves cover the full Quoridor rule set including jump-over-opponent and diagonal-slide-when-blocked. Closes mcts-odin-yau.
+
+- **`docs/GETTING_STARTED.md`** — reading-and-running onboarding path. Five-minute orientation → run tic-tac-toe / tests / bench → read the algorithm (`mcts.odin` → `playout.odin` → `config.odin`) → table of demo games by complexity → evaluator/embedding pointers → the three load-bearing pitfalls (evaluator masking, do/undo exactness, `terminal_value` POV). Linked from README Quick start.
+
 ## [0.4.2] — 2026-05-16
 
 Patch release: three perf cleanups + one Go-board data-structure swap. No stable-surface changes. Bench ~108k sims/s on 9×9 Go (single-thread, uniform evaluator) vs ~105k at v0.4.1.
