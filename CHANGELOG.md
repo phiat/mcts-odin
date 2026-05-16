@@ -2,6 +2,23 @@
 
 All notable changes to this project will be documented here. Versions follow [SemVer](https://semver.org/) once 1.0 lands; pre-1.0 is `0.MINOR.PATCH-stage`.
 
+## [0.2.1] — 2026-05-16
+
+A patch release: one new demo game, one bench bug fix, one documentation example. No stable-surface changes.
+
+### Added
+
+- **Reversi (Othello) demo game** in `games/reversi/`. 8×8, standard opening, eight-direction flip cascade, PASS_ACTION = 64, two-pass termination. Zero-allocation `Move_Delta` packing: the flipped-cell set fits in a `u64` bitmask in `hash`, prev-state bits ride in `flags`. 7 tests pass under the memory tracker. Brings the demo-game count to four. Closes mcts-odin-dun.
+- **NN evaluator skeleton** at `examples/nn_evaluator_skeleton.odin`. Runnable template covering both sequential and batched evaluator paths with a mocked forward pass. Shows legal-move masking, numerically-stable softmax over masked logits, and the `user_data` pattern for carrying model handles. Replace `mock_nn_forward` with your ONNX / libtorch / Python-FFI call and the surrounding code is unchanged. Linked from `README.md` and `EMBEDDING.md §3`. Closes mcts-odin-m70.
+
+### Fixed
+
+- **`bench/bench.odin` trials degraded across runs.** `uniform_evaluator` allocated a small `[dynamic]int` on `context.temp_allocator` 51,200 times per trial; the MCTS core never resets that arena, so trial 5 was running at ~40% of trial 1's rate due to paging. Added `defer free_all(context.temp_allocator)` at the top of `run_trial`. That uncovered a secondary bug — main's `rates` slice was on the same arena, so the per-trial reset was freeing it underneath us and the printed mean/std were reading freed memory. Moved `rates` to the default allocator. Bumped warmups 1 → 2 since trial 1 still showed a cold-page warmup cost. Local re-run: **45,286 ± 2,071 sims/s** (4.6% std, was 28%). Closes mcts-odin-brj.
+
+### Docs
+
+- **Upstream role flip complete.** `docs/UPSTREAM.md` updated — autogodin removed its own `odin/alpha_go/mcts.odin` and now consumes mcts-odin via FFI. The "watch for upstream MCTS drift" chore is retired; mcts-odin is the canonical home of the algorithm. Closes mcts-odin-w39.4 and the bootstrap epic mcts-odin-w39.
+
 ## [0.2.0] — 2026-05-16
 
 A minor release with one substantive algorithm change. **Behaviour-affecting**: callers who pin 0.1.x and upgrade will see different per-game play even with the same seed.
