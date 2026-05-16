@@ -409,6 +409,29 @@ ttt_lambda_self_play_terminates :: proc(t: ^testing.T) {
 	testing.expect(t, ttt.is_terminal(state))
 }
 
+// PCR (progressive computation reduction): if cfg.pcr_sims is set, the per-
+// call sim count is sampled from pcr_sims weighted by pcr_probs — the
+// caller's `num_simulations` argument is overridden. Surprising behaviour
+// worth pinning.
+@(test)
+ttt_pcr_overrides_num_simulations :: proc(t: ^testing.T) {
+	pcr_sims := [1]int{7}
+	pcr_probs := [1]f32{1.0}
+
+	g := ttt.game()
+	state := ttt.new_state()
+	cfg := mcts.default_config()
+	cfg.pcr_sims = pcr_sims[:]
+	cfg.pcr_probs = pcr_probs[:]
+	tree: mcts.Tree
+	mcts.init(&tree, &g, state, cfg, seed = 3)
+	defer mcts.destroy(&tree)
+
+	// Caller asks for 500 sims; PCR forces 7.
+	mcts.run_simulations(&tree, 500, uniform_evaluator, &g)
+	testing.expect_value(t, mcts.get_root_visit_count(&tree), 7)
+}
+
 @(private = "file")
 contains :: proc(haystack, needle: string) -> bool {
 	if len(needle) == 0 {return true}
