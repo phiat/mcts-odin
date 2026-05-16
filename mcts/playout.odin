@@ -69,21 +69,15 @@ select_slot_puct :: proc(t: ^Tree, node_idx: int) -> int {
 // from working_state's current_player perspective (caller flips if needed).
 @(private)
 expand_node :: proc(t: ^Tree, node_idx: int, evaluator: Evaluator, user_data: rawptr) -> f32 {
-	cap_n := t.game.max_actions
-	a_buf := make([]int, cap_n, context.temp_allocator)
-	p_buf := make([]f32, cap_n, context.temp_allocator)
-	defer delete(a_buf, context.temp_allocator)
-	defer delete(p_buf, context.temp_allocator)
-
 	v: f32
-	n := evaluator(t.working_state, a_buf, p_buf, &v, user_data)
+	n := evaluator(t.working_state, t.eval_a_buf, t.eval_p_buf, &v, user_data)
 
 	actions := make([]int, n, t.allocator)
 	logP    := make([]f32, n, t.allocator)
 	child   := make([]int, n, t.allocator)
 	for k in 0 ..< n {
-		actions[k] = a_buf[k]
-		logP[k]    = log_safe(p_buf[k])
+		actions[k] = t.eval_a_buf[k]
+		logP[k]    = log_safe(t.eval_p_buf[k])
 		child[k]   = -1
 	}
 	t.nodes[node_idx].actions = actions
@@ -163,12 +157,6 @@ fast_rollout :: proc(
 	evaluator: Evaluator,
 	user_data: rawptr,
 ) -> f32 {
-	cap_n := t.game.max_actions
-	a_buf := make([]int, cap_n, context.temp_allocator)
-	p_buf := make([]f32, cap_n, context.temp_allocator)
-	defer delete(a_buf, context.temp_allocator)
-	defer delete(p_buf, context.temp_allocator)
-
 	deltas := make([dynamic]Move_Delta, 0, remaining_depth, context.temp_allocator)
 	defer {
 		#reverse for d in deltas {t.game.undo_move(t.working_state, d)}
@@ -178,9 +166,9 @@ fast_rollout :: proc(
 	depth := 0
 	value: f32
 	for !t.game.is_terminal(t.working_state) && depth < remaining_depth {
-		n := evaluator(t.working_state, a_buf, p_buf, &value, user_data)
+		n := evaluator(t.working_state, t.eval_a_buf, t.eval_p_buf, &value, user_data)
 		if n == 0 {break}
-		action := sample_packed_action(a_buf[:n], p_buf[:n], t.config.rollout_temperature)
+		action := sample_packed_action(t.eval_a_buf[:n], t.eval_p_buf[:n], t.config.rollout_temperature)
 		d := t.game.do_move(t.working_state, action)
 		append(&deltas, d)
 		depth += 1
@@ -192,7 +180,7 @@ fast_rollout :: proc(
 		if cp != player_perspective {v = 1.0 - v}
 		return v
 	}
-	_ = evaluator(t.working_state, a_buf, p_buf, &value, user_data)
+	_ = evaluator(t.working_state, t.eval_a_buf, t.eval_p_buf, &value, user_data)
 	cp := t.game.current_player(t.working_state)
 	if cp != player_perspective {value = 1.0 - value}
 	return value

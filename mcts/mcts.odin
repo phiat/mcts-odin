@@ -91,6 +91,12 @@ Tree :: struct {
 	// of each simulation so it always equals the root state between sims.
 	working_state: rawptr,
 
+	// Persistent scratch for evaluator (action, prob) writes. Allocated once
+	// at init time, sized to game.max_actions. Both expand_node and
+	// fast_rollout reuse these instead of make/delete-ing per call.
+	eval_a_buf: []int,
+	eval_p_buf: []f32,
+
 	// Per-tree growing arena. Nodes and per-node slot arrays come from here.
 	// destroy() frees it all in one shot.
 	arena:     virtual.Arena,
@@ -113,6 +119,8 @@ init :: proc(t: ^Tree, game: ^Game, root_state: rawptr, config: Config, seed: u6
 	t.allocator = virtual.arena_allocator(&t.arena)
 
 	t.nodes = make([dynamic]Node, 0, 64, t.allocator)
+	t.eval_a_buf = make([]int, game.max_actions, t.allocator)
+	t.eval_p_buf = make([]f32, game.max_actions, t.allocator)
 	t.rng_state = rand.create(seed if seed != 0 else 0xC0FFEE_DECADE)
 
 	// Root perspective = the player NOT to move at root, so that values get
