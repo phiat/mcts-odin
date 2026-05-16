@@ -263,12 +263,10 @@ undo_move :: proc(state: rawptr, delta: mcts.Move_Delta) {
 		// Clear the played stone first.
 		s.cells[action] = EMPTY
 		flip_bitmask := delta.hash & ~(u64(1) << u64(action))
-		// Flip every recorded cell back to the opponent's colour.
-		opp := EMPTY
-		switch prev_to_play {
-		case 0: opp = WHITE
-		case 1: opp = BLACK
-		}
+		// Flipped cells go back to the opponent of the mover. prev_to_play is
+		// the mover (0 or 1 by pack_flags construction); opp = 1 - mover, which
+		// also happens to match BLACK=0/WHITE=1.
+		opp := i8(1 - prev_to_play)
 		bm := flip_bitmask
 		for bm != 0 {
 			i := lsb_index(bm)

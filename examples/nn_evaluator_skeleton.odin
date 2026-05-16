@@ -69,11 +69,22 @@ mock_nn_forward :: proc(state: rawptr, out_logits: []f32, out_value: ^f32) {
 // Numerically stable softmax-with-legal-mask. Sets prob = 0 for illegal
 // actions before normalising, so the prior distribution lives entirely on
 // legal moves (constraint #1 above).
+//
+// Precondition: at least one entry of legal_mask is true. If all entries
+// are false there's nothing to softmax over — the caller should detect the
+// no-legal-moves case (terminal or stalemate) and return 0 to MCTS before
+// touching this helper.
 softmax_masked :: proc(logits: []f32, legal_mask: []bool, out_probs: []f32) {
 	max_logit := f32(-1e30)
+	any_legal := false
 	for i in 0 ..< len(logits) {
 		if !legal_mask[i] {continue}
+		any_legal = true
 		if logits[i] > max_logit {max_logit = logits[i]}
+	}
+	if !any_legal {
+		for i in 0 ..< len(out_probs) {out_probs[i] = 0}
+		return
 	}
 	sum := f32(0)
 	for i in 0 ..< len(logits) {

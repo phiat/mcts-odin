@@ -47,8 +47,10 @@ uniform_evaluator :: proc(
 run_trial :: proc(g: ^mcts.Game, sims_per_move, moves_per_trial: int, seed: u64) -> (elapsed_ns: i64, total_sims: int) {
 	// The MCTS core never touches the caller's temp_allocator, but
 	// uniform_evaluator allocates a small [dynamic]int there 51,200 times
-	// per trial. Without this reset, the arena grows ~33 MB/trial and later
-	// trials degrade from paging.
+	// per trial — peak ~33 MB intra-trial. The defer fires on trial exit
+	// so the arena resets between trials; without it, trial N accumulates
+	// N * 33 MB and later trials degrade from paging (trial 5 was ~40% of
+	// trial 1's rate). Intra-trial peak is unchanged.
 	defer free_all(context.temp_allocator)
 
 	state := gg.new_state(9, 7.5)
