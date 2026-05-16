@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented here. Versions follow [SemVer](https://semver.org/) once 1.0 lands; pre-1.0 is `0.MINOR.PATCH-stage`.
 
+## [Unreleased]
+
+### Changed
+
+- **Go: `is_legal_flat` rewritten — 2.3× bench speedup.** Replaced the clone-and-simulate path (board slice + `seen_hashes` map clone per candidate, then `play_flat_unchecked` and inspect) with an in-place test: capture detection flood-fills opp neighbour groups once, suicide is decided from friendly-group liberty counts, and the would-be PSK hash is computed incrementally (`current_hash XOR placed XOR captured stones`). 9×9 Go bench goes 45.3k → 105k sims/s (single-thread, uniform evaluator). Per-call `legal_actions` cost drops 33µs → 6µs in the profile harness. Closes mcts-odin-81j.8 (step 1).
+
 ## [0.4.0] — 2026-05-16
 
 Minor release: three new demo games (Hex, Breakthrough, Gomoku) wrap up the v0.4 roadmap (`mcts-odin-coj`). All additive — no existing API surface changed. Demo-game count goes 4 → 7; test suite 64 → 93.

@@ -172,26 +172,6 @@ clone_go_board :: proc(src: ^GoBoard, allocator := context.allocator) -> GoBoard
 	return dst
 }
 
-// Clone with empty seen_hashes — used by is_legal_flat for the simulation copy.
-@(private = "file")
-clone_for_sim :: proc(src: ^GoBoard, allocator := context.allocator) -> GoBoard {
-	context.allocator = allocator
-	dst := GoBoard {
-		size               = src.size,
-		komi               = src.komi,
-		board              = slice.clone(src.board),
-		to_play            = src.to_play,
-		ko_point           = src.ko_point,
-		consecutive_passes = src.consecutive_passes,
-		move_count         = src.move_count,
-		tables             = src.tables,
-		current_hash       = src.current_hash,
-		allocator          = allocator,
-	}
-	dst.seen_hashes = make(map[u64]struct{})
-	return dst
-}
-
 @(private = "file")
 init_neighbors_table :: proc(t: ^BoardTables) {
 	size := t.size
@@ -314,6 +294,10 @@ is_legal :: proc(b: ^GoBoard, row, col: int) -> bool {
 	return is_legal_flat(b, row * board_dim(b) + col)
 }
 
+// Legality test for placing b.to_play at `index`. Avoids the old clone-and-play
+// path: captures are detected by flood-filling adjacent opp groups in place,
+// suicide is checked by inspecting friendly-group liberties, and the would-be
+// post-move Zobrist hash is computed incrementally for the PSK probe.
 is_legal_flat :: proc(b: ^GoBoard, index: int) -> bool {
 	if index < 0 || index >= n_cells(b) {return false}
 	if b.board[index] != EMPTY {return false}
@@ -321,50 +305,80 @@ is_legal_flat :: proc(b: ^GoBoard, index: int) -> bool {
 
 	player := b.to_play
 	opponent := opponent_of(player)
-
-	has_friendly := false
-	has_empty := false
-	captures := false
-
 	nb := b.tables.neighbors[index]
-	loop: for k in 0 ..< nb.count {
+
+	has_empty := false
+	for k in 0 ..< nb.count {
+		if b.board[nb.indices[k]] == EMPTY {has_empty = true; break}
+	}
+
+	need_psk_check := len(b.seen_hashes) > 0
+
+	// Fast path: empty neighbor (immediate liberty) and no PSK history. No
+	// captures need to be enumerated — the move can't be suicide and there's
+	// no hash to probe.
+	if has_empty && !need_psk_check {return true}
+
+	n := n_cells(b)
+
+	// Find unique opponent groups adjacent to `index`. Capture detection:
+	// pre-move libs == {index} ⇒ post-move libs == {} ⇒ group is captured.
+	visited_opp := make([]bool, n, context.temp_allocator)
+	defer delete(visited_opp, context.temp_allocator)
+	captured := make([dynamic]int, 0, 8, context.temp_allocator)
+	defer delete(captured)
+
+	for k in 0 ..< nb.count {
 		ni := nb.indices[k]
-		v := b.board[ni]
-		if v == EMPTY {
-			has_empty = true
-			break loop
-		} else if v == player {
-			has_friendly = true
-		} else if v == opponent && !captures {
+		if b.board[ni] != opponent || visited_opp[ni] {continue}
+		group, libs := get_group_and_liberties(b, ni, context.temp_allocator)
+		is_captured := len(libs) == 1 && libs[0] == index
+		for g in group {
+			visited_opp[g] = true
+			if is_captured {append(&captured, g)}
+		}
+		delete(group)
+		delete(libs)
+	}
+
+	has_capture := len(captured) > 0
+
+	// Suicide check. Reached only when there's no empty neighbor and no
+	// capture; otherwise the placed stone's virtual group already has a
+	// liberty (the empty neighbor, or one of the to-be-empty captured cells).
+	//
+	// Without captures or empty neighbors, the virtual group's only possible
+	// liberties come from existing friendly-group liberties OTHER than
+	// `index` itself. A friendly group adjacent to `index` necessarily has
+	// `index` as one of its liberties, so libs >= 2 ⇔ has a liberty that
+	// isn't `index` ⇔ virtual group survives.
+	if !has_empty && !has_capture {
+		visited_fr := make([]bool, n, context.temp_allocator)
+		defer delete(visited_fr, context.temp_allocator)
+		has_friendly_liberty := false
+		for k in 0 ..< nb.count {
+			ni := nb.indices[k]
+			if b.board[ni] != player || visited_fr[ni] {continue}
 			group, libs := get_group_and_liberties(b, ni, context.temp_allocator)
-			if len(libs) == 1 && libs[0] == index {
-				captures = true
-			}
+			for g in group {visited_fr[g] = true}
+			lib_count := len(libs)
 			delete(group)
 			delete(libs)
+			if lib_count >= 2 {has_friendly_liberty = true; break}
 		}
+		if !has_friendly_liberty {return false}
 	}
 
-	// Single-stone-suicide fast reject.
-	if !has_empty && !has_friendly && !captures {
-		return false
+	// PSK check. Compute the would-be hash without mutating state:
+	//   h := current_hash XOR placed_stone XOR each captured stone.
+	if need_psk_check {
+		h := b.current_hash ~ b.tables.zobrist[index][int(player)]
+		for c in captured {
+			h ~= b.tables.zobrist[c][int(opponent)]
+		}
+		if _, ok := b.seen_hashes[h]; ok {return false}
 	}
 
-	need_suicide_check := !has_empty && !captures
-	need_psk_check := len(b.seen_hashes) > 0
-	if need_suicide_check || need_psk_check {
-		tmp := clone_for_sim(b, context.temp_allocator)
-		defer destroy_go_board(&tmp)
-		play_flat_unchecked(&tmp, index)
-		if need_suicide_check && tmp.board[index] == EMPTY {
-			return false
-		}
-		if need_psk_check {
-			if _, ok := b.seen_hashes[tmp.current_hash]; ok {
-				return false
-			}
-		}
-	}
 	return true
 }
 
