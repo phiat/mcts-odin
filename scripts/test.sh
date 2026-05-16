@@ -4,7 +4,17 @@ set -euo pipefail
 HERE="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$HERE"
 
-# -define:ODIN_DEBUG=true so the Odin testing runner reports memory tracker stats.
+# -debug enables Odin's memory tracker so leaks fail the suite.
 ODIN_OPT="${ODIN_OPT:--debug}"
 
-odin test tests $ODIN_OPT "$@"
+# Each suite is a separate Odin package, so test them individually.
+SUITES=(
+	tests
+	tests/games/connect_four
+	tests/games/go
+)
+
+for s in "${SUITES[@]}"; do
+	echo "=== $s ==="
+	odin test "$s" $ODIN_OPT "$@"
+done

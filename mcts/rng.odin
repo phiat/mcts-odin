@@ -29,13 +29,16 @@ gamma_sample :: proc(alpha: f32) -> f32 {
 // Categorical sample over a packed (action, prob) list. Applies temperature
 // rescaling in log-space when temperature != 1. Returns -1 if the list is empty
 // (caller decides what to do; MCTS treats that as "evaluator gave no moves").
+//
+// `scratch_allocator` is used only when temperature != 1.0 (the rescale path
+// needs an n-element f32 scratch). Pass t.scratch_allocator on the hot path.
 @(private)
-sample_packed_action :: proc(actions: []int, probs: []f32, temperature: f32) -> int {
+sample_packed_action :: proc(actions: []int, probs: []f32, temperature: f32, scratch_allocator := context.temp_allocator) -> int {
 	n := len(actions)
 	if n == 0 {return -1}
 
-	work := make([]f32, n, context.temp_allocator)
-	defer delete(work, context.temp_allocator)
+	work := make([]f32, n, scratch_allocator)
+	defer delete(work, scratch_allocator)
 
 	if temperature != 1.0 && temperature > 0 {
 		max_logit := f32(min(f32))

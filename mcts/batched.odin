@@ -78,9 +78,8 @@ select_slot_puct_vloss :: proc(t: ^Tree, node_idx: int) -> int {
 // scope; deltas are temp-allocated and freed on unwind).
 @(private = "file")
 descend_one :: proc(t: ^Tree) -> Pending_Leaf {
-	path := make([dynamic]int, 0, 8, context.temp_allocator)
-	deltas := make([dynamic]Move_Delta, 0, 8, context.temp_allocator)
-	defer delete(deltas)
+	path := make([dynamic]int, 0, 8, t.scratch_allocator)
+	deltas := make([dynamic]Move_Delta, 0, 8, t.scratch_allocator)
 
 	append(&path, 0)
 	current := 0
@@ -148,6 +147,7 @@ run_simulations_batched :: proc(
 	user_data:        rawptr = nil,
 ) {
 	use_tree_rng(t)
+	free_all(t.scratch_allocator)
 	n_sims := num_simulations
 	if len(t.config.pcr_sims) > 0 {
 		r := rand.float32()
@@ -165,10 +165,8 @@ run_simulations_batched :: proc(
 	// Expand the root via a 1-state batch call so the API stays single-callback.
 	if !t.nodes[0].expanded && !t.nodes[0].is_terminal {
 		states := []rawptr{t.working_state}
-		a_buf := make([]int, cap_n, context.temp_allocator)
-		p_buf := make([]f32, cap_n, context.temp_allocator)
-		a_views := [][]int{a_buf[:]}
-		p_views := [][]f32{p_buf[:]}
+		a_views := [][]int{t.eval_a_buf}
+		p_views := [][]f32{t.eval_p_buf}
 		counts := []int{0}
 		values := []f32{0}
 		evaluator(states, a_views, p_views, counts, values, user_data)
@@ -177,8 +175,8 @@ run_simulations_batched :: proc(
 		logP    := make([]f32, n, t.allocator)
 		child   := make([]int, n, t.allocator)
 		for k in 0 ..< n {
-			actions[k] = a_buf[k]
-			logP[k]    = log_safe(p_buf[k])
+			actions[k] = t.eval_a_buf[k]
+			logP[k]    = log_safe(t.eval_p_buf[k])
 			child[k]   = -1
 		}
 		t.nodes[0].actions = actions
@@ -194,18 +192,21 @@ run_simulations_batched :: proc(
 	completed := 0
 	for completed < n_sims {
 		target := min(leaf_batch_size, n_sims - completed)
-		pending := make([dynamic]Pending_Leaf, 0, target, context.temp_allocator)
-		eval_states := make([dynamic]rawptr, 0, target, context.temp_allocator)
+		pending := make([dynamic]Pending_Leaf, 0, target, t.scratch_allocator)
+		eval_states := make([dynamic]rawptr, 0, target, t.scratch_allocator)
 		defer {
 			for &p in pending {
 				if p.snapshot != nil {t.game.free(p.snapshot)}
 			}
-			delete(pending)
-			delete(eval_states)
 		}
 
 		for _ in 0 ..< target {
 			pl := descend_one(t)
+			// Both dynamic arrays are sized to exactly `target` at the top of
+			// this gather; we append at most once per loop iteration so a grow
+			// would mean a future change broke that invariant.
+			assert(len(eval_states) < target, "eval_states grew past its cap")
+			assert(len(pending) < target, "pending grew past its cap")
 			if !pl.is_terminal {
 				pl.eval_slot = len(eval_states)
 				append(&eval_states, pl.snapshot)
@@ -215,12 +216,12 @@ run_simulations_batched :: proc(
 
 		// Batched evaluation. Per-state scratch slices view into one shared backing buffer.
 		n_eval := len(eval_states)
-		a_buf  := make([][]int, n_eval, context.temp_allocator)
-		p_buf  := make([][]f32, n_eval, context.temp_allocator)
-		counts := make([]int,   n_eval, context.temp_allocator)
-		values := make([]f32,   n_eval, context.temp_allocator)
-		a_storage := make([]int, cap_n * n_eval, context.temp_allocator)
-		p_storage := make([]f32, cap_n * n_eval, context.temp_allocator)
+		a_buf  := make([][]int, n_eval, t.scratch_allocator)
+		p_buf  := make([][]f32, n_eval, t.scratch_allocator)
+		counts := make([]int,   n_eval, t.scratch_allocator)
+		values := make([]f32,   n_eval, t.scratch_allocator)
+		a_storage := make([]int, cap_n * n_eval, t.scratch_allocator)
+		p_storage := make([]f32, cap_n * n_eval, t.scratch_allocator)
 		for i in 0 ..< n_eval {
 			a_buf[i] = a_storage[i * cap_n : (i + 1) * cap_n]
 			p_buf[i] = p_storage[i * cap_n : (i + 1) * cap_n]

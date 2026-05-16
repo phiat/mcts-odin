@@ -21,6 +21,13 @@ import "core:math/rand"
 //
 // Returning 0 is legal at terminal states; otherwise it means "no moves" and
 // MCTS will treat the position as a leaf with the supplied value.
+//
+// IMPORTANT: the evaluator MUST emit only legal actions. MCTS does not
+// re-check legality before calling game.do_move on the chosen slot — a
+// nonzero prior for an illegal action will be silently selected and produce
+// undefined behaviour (panic / no-op / corrupted state, depending on how the
+// game implements do_move). NN-backed evaluators must mask their logits to
+// legal moves before normalisation.
 // ============================================================================
 
 Evaluator :: #type proc(
@@ -157,10 +164,9 @@ fast_rollout :: proc(
 	evaluator: Evaluator,
 	user_data: rawptr,
 ) -> f32 {
-	deltas := make([dynamic]Move_Delta, 0, remaining_depth, context.temp_allocator)
+	deltas := make([dynamic]Move_Delta, 0, remaining_depth, t.scratch_allocator)
 	defer {
 		#reverse for d in deltas {t.game.undo_move(t.working_state, d)}
-		delete(deltas)
 	}
 
 	depth := 0
@@ -168,7 +174,7 @@ fast_rollout :: proc(
 	for !t.game.is_terminal(t.working_state) && depth < remaining_depth {
 		n := evaluator(t.working_state, t.eval_a_buf, t.eval_p_buf, &value, user_data)
 		if n == 0 {break}
-		action := sample_packed_action(t.eval_a_buf[:n], t.eval_p_buf[:n], t.config.rollout_temperature)
+		action := sample_packed_action(t.eval_a_buf[:n], t.eval_p_buf[:n], t.config.rollout_temperature, t.scratch_allocator)
 		d := t.game.do_move(t.working_state, action)
 		append(&deltas, d)
 		depth += 1
@@ -194,8 +200,8 @@ add_dirichlet_noise :: proc(t: ^Tree, alpha, weight: f32) {
 	n := len(root.actions)
 	if n == 0 {return}
 
-	noise := make([]f32, n, context.temp_allocator)
-	defer delete(noise, context.temp_allocator)
+	noise := make([]f32, n, t.scratch_allocator)
+	defer delete(noise, t.scratch_allocator)
 	sum := f32(0)
 	for k in 0 ..< n {
 		noise[k] = gamma_sample(alpha)
@@ -214,6 +220,7 @@ add_dirichlet_noise :: proc(t: ^Tree, alpha, weight: f32) {
 // On entry/exit, t.working_state is at the root state.
 run_simulations :: proc(t: ^Tree, num_simulations: int, evaluator: Evaluator, user_data: rawptr = nil) {
 	use_tree_rng(t)
+	free_all(t.scratch_allocator)
 	n_sims := num_simulations
 	if len(t.config.pcr_sims) > 0 {
 		r := rand.float32()

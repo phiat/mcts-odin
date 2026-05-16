@@ -97,10 +97,17 @@ Tree :: struct {
 	eval_a_buf: []int,
 	eval_p_buf: []f32,
 
-	// Per-tree growing arena. Nodes and per-node slot arrays come from here.
-	// destroy() frees it all in one shot.
+	// Per-tree growing arena for permanent allocations: nodes and per-node
+	// slot arrays. destroy() frees it all in one shot.
 	arena:     virtual.Arena,
 	allocator: runtime.Allocator,
+
+	// Per-tree scratch arena, reset at the top of each run_simulations call.
+	// All transient allocations inside MCTS (descent paths, move-delta
+	// stacks, policy noise, batched-eval scratch slices) live here, so we
+	// never disturb the caller's context.temp_allocator.
+	scratch_arena:     virtual.Arena,
+	scratch_allocator: runtime.Allocator,
 }
 
 // init: initializes `t` in-place at its final address. Do NOT return Tree by
@@ -117,6 +124,8 @@ init :: proc(t: ^Tree, game: ^Game, root_state: rawptr, config: Config, seed: u6
 	t.working_state = root_state
 	_ = virtual.arena_init_growing(&t.arena, 8 << 20)
 	t.allocator = virtual.arena_allocator(&t.arena)
+	_ = virtual.arena_init_growing(&t.scratch_arena, 1 << 20)
+	t.scratch_allocator = virtual.arena_allocator(&t.scratch_arena)
 
 	t.nodes = make([dynamic]Node, 0, 64, t.allocator)
 	t.eval_a_buf = make([]int, game.max_actions, t.allocator)
@@ -142,6 +151,7 @@ destroy :: proc(t: ^Tree) {
 	if t.game != nil && t.game.free != nil && t.working_state != nil {
 		t.game.free(t.working_state)
 	}
+	virtual.arena_destroy(&t.scratch_arena)
 	virtual.arena_destroy(&t.arena)
 	t^ = {}
 }

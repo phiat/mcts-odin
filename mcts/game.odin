@@ -51,6 +51,13 @@ Game :: struct {
 	max_actions: int,
 }
 
+// Important contract: evaluators (mcts.Evaluator and mcts.Evaluator_Batched)
+// MUST mask their policy to legal actions only. MCTS does not re-check
+// legality before calling do_move on the slot selected by PUCT — a nonzero
+// prior for an illegal action will be silently chosen, and what happens next
+// is whatever your do_move does on an illegal action (panic, no-op, corrupt
+// state). NN evaluators must zero out illegal positions before normalising.
+
 // Opaque delta returned by do_move. The host is the only entity that
 // interprets the bytes — MCTS just hands it back to undo_move.
 //

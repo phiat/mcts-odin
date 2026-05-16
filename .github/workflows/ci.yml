@@ -1,0 +1,41 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build-and-test:
+    name: Build and test (Linux)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # Pin Odin to dev-2026-05 (matches the nightly tag used for local
+      # development; see CLAUDE.md / AGENTS.md). The setup-odin action will
+      # fetch the prebuilt GitHub release asset for this tag rather than
+      # building from source, which keeps the job fast (~30s install vs.
+      # ~3min build).
+      - name: Setup Odin (dev-2026-05)
+        uses: laytan/setup-odin@v2
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          release: dev-2026-05
+          llvm-version: 20
+
+      - name: Print Odin version
+        run: odin version
+
+      - name: Build shared library
+        run: ./scripts/build.sh
+
+      - name: Verify build artifact
+        run: test -f build/libmcts_odin.so
+
+      - name: Run tests
+        run: ./scripts/test.sh
