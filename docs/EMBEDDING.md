@@ -165,11 +165,29 @@ for !my_game.is_terminal(tree.working_state) {
 - The evaluator's scratch buffers (`out_actions`, `out_probs`) are owned by the tree (`eval_a_buf`/`eval_p_buf`, sized to `game.max_actions`). They're valid only for the duration of the evaluator call — do not retain pointers.
 - Caller's `context.temp_allocator` is **not** disturbed by MCTS. All transient allocations land on the tree's scratch arena.
 
-## 8. Threading
+## 8. Debug introspection
+
+Two helpers in `mcts/debug.odin` dump the tree rooted at `t.root_idx` for visualization or test fixtures. Both walk reachable nodes only and return a caller-owned `string`.
+
+```odin
+dot := mcts.dump_tree_dot(&tree)
+defer delete(dot)
+// pipe through `dot -Tpng > tree.png` or any Graphviz layout engine
+
+js := mcts.dump_tree_json(&tree)
+defer delete(js)
+// parse with core:encoding/json or capture as a regression fixture
+```
+
+`dot` labels show `#idx[*]` (the `*` marks terminal), `N`, `Q`, and `d` (depth); edges are labeled with the action id. `json` is a single object with `root_idx` and `nodes[]`; each node carries the full bookkeeping fields plus a `children[]` list of `(slot, action, prior, child_idx)`.
+
+Both helpers are marked experimental — the field set may change before 1.0. Not on the hot path; use between `run_simulations` calls.
+
+## 9. Threading
 
 Not yet. The current MCTS is single-threaded; leaf-parallelism is *algorithmic* (one tree, batched evaluator), not OS-thread parallelism. True root-parallel or tree-parallel MCTS is a future extension.
 
-## 9. API stability
+## 10. API stability
 
 The package is pre-1.0. Below is what consumers can rely on vs. what may still move.
 

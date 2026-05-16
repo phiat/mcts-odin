@@ -274,3 +274,51 @@ ttt_self_play_runs_to_completion :: proc(t: ^testing.T) {
 	// Some outcome was reached.
 	testing.expect(t, ttt.is_terminal(state))
 }
+
+@(test)
+ttt_dump_tree_dot_well_formed :: proc(t: ^testing.T) {
+	g := ttt.game()
+	state := ttt.new_state()
+	cfg := mcts.default_config()
+	tree: mcts.Tree
+	mcts.init(&tree, &g, state, cfg, seed = 7)
+	defer mcts.destroy(&tree)
+	mcts.run_simulations(&tree, 30, uniform_evaluator, &g)
+
+	s := mcts.dump_tree_dot(&tree)
+	defer delete(s)
+	testing.expect(t, len(s) > 0)
+	// digraph header + node label + at least one edge
+	testing.expect(t, contains(s, "digraph mcts"))
+	testing.expect(t, contains(s, "n0 [label="))
+	testing.expect(t, contains(s, " -> "))
+}
+
+@(test)
+ttt_dump_tree_json_well_formed :: proc(t: ^testing.T) {
+	g := ttt.game()
+	state := ttt.new_state()
+	cfg := mcts.default_config()
+	tree: mcts.Tree
+	mcts.init(&tree, &g, state, cfg, seed = 7)
+	defer mcts.destroy(&tree)
+	mcts.run_simulations(&tree, 30, uniform_evaluator, &g)
+
+	s := mcts.dump_tree_json(&tree)
+	defer delete(s)
+	testing.expect(t, len(s) > 0)
+	testing.expect(t, s[0] == '{')
+	testing.expect(t, s[len(s)-1] == '}')
+	testing.expect(t, contains(s, "\"root_idx\":0"))
+	testing.expect(t, contains(s, "\"nodes\":["))
+}
+
+@(private = "file")
+contains :: proc(haystack, needle: string) -> bool {
+	if len(needle) == 0 {return true}
+	if len(needle) > len(haystack) {return false}
+	for i in 0 ..= len(haystack) - len(needle) {
+		if haystack[i:i+len(needle)] == needle {return true}
+	}
+	return false
+}
