@@ -78,7 +78,7 @@ select_slot_puct_vloss :: proc(t: ^Tree, node_idx: int) -> int {
 // scope; deltas are temp-allocated and freed on unwind).
 @(private = "file")
 descend_one :: proc(t: ^Tree) -> Pending_Leaf {
-	path := make([dynamic]int, 0, 8)
+	path := make([dynamic]int, 0, 8, context.temp_allocator)
 	deltas := make([dynamic]Move_Delta, 0, 8, context.temp_allocator)
 	defer delete(deltas)
 
@@ -198,7 +198,6 @@ run_simulations_batched :: proc(
 		eval_states := make([dynamic]rawptr, 0, target, context.temp_allocator)
 		defer {
 			for &p in pending {
-				delete(p.path)
 				if p.snapshot != nil {t.game.free(p.snapshot)}
 			}
 			delete(pending)

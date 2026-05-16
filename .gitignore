@@ -9,6 +9,9 @@ CLAUDE.md
 *.db
 .beads-credential-key
 
+# Local env (per-machine paths, secrets); .env.example is committed
+.env
+
 # Build artifacts
 build/
 *.so

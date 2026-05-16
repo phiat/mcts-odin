@@ -8,6 +8,16 @@ Games plug in by implementing a small `Game` vtable; the core knows nothing abou
 
 v0.1-dev. Core + three demo games + 43 passing tests under Odin's memory tracker.
 
+### Throughput
+
+9×9 Go, 1600 sims/move × 32 moves, uniform-policy evaluator, single-thread, `-o:speed -no-bounds-check`:
+
+```
+mcts-odin:        13,182 ± 94 sims/s
+```
+
+For reference, [autogodin](https://github.com/phiat/autogodin)'s comparable bench (same workload, evaluator marshalled through a Python callback) reports `cpp: 8,470` and `odin: 2,859` sims/s. The numbers aren't strictly comparable — mcts-odin's bench runs the evaluator inline in Odin without FFI — but the 4.6× over autogodin's own Odin port shows the impact of the do_move/undo_move lift + packed slot storage + zero-allocation evaluator path.
+
 ## Quick start
 
 ```odin
