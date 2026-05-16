@@ -6,18 +6,17 @@ Games plug in by implementing a small `Game` vtable; the core knows nothing abou
 
 ## Status
 
-v0.1.1. Core + three demo games + 45 passing tests under Odin's memory tracker.
+v0.2.0. Core + three demo games + 48 passing tests under Odin's memory tracker.
 
 ### Throughput
 
 9×9 Go, 1600 sims/move × 32 moves, uniform-policy evaluator, single-thread, `-o:speed -no-bounds-check`:
 
 ```
-mcts-odin (default):   14,052 ± 48  sims/s    (1.66x autogodin cpp, 4.91x autogodin odin)
-mcts-odin (HINT=9):    ~19,000      sims/s    build with -define:BOARD_SIZE_HINT=9
+mcts-odin (default):   22,611 ± 114 sims/s    (2.67x autogodin cpp, 7.91x autogodin odin)
 ```
 
-For reference, [autogodin](https://github.com/phiat/autogodin)'s comparable bench (same workload, evaluator marshalled through a Python callback) reports `cpp: 8,470` and `odin: 2,859` sims/s. The numbers aren't strictly comparable — mcts-odin's bench runs the evaluator inline in Odin without FFI — but the 4.9× over autogodin's own Odin port shows the cumulative impact of the do/undo lift, packed slot storage, SoA hot fields, linear-space priors (no PUCT-loop `math.exp`), per-Tree scratch arena, subtree reuse, branchless argmax, and `BOARD_SIZE_HINT`-friendly hot-path helpers.
+For reference, [autogodin](https://github.com/phiat/autogodin)'s comparable bench (same workload, evaluator marshalled through a Python callback) reports `cpp: 8,470` and `odin: 2,859` sims/s. The numbers aren't strictly comparable — mcts-odin's bench runs the evaluator inline in Odin without FFI — but the cumulative gap reflects the do/undo lift, packed slot storage, SoA hot fields, linear-space priors (no PUCT-loop `math.exp`), per-Tree scratch arena, subtree reuse, branchless argmax, `BOARD_SIZE_HINT`-friendly hot-path helpers, and FPU producing a broader/shallower tree (fewer do_move/undo_move steps per sim).
 
 ## Quick start
 

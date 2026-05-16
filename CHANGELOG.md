@@ -2,6 +2,39 @@
 
 All notable changes to this project will be documented here. Versions follow [SemVer](https://semver.org/) once 1.0 lands; pre-1.0 is `0.MINOR.PATCH-stage`.
 
+## [0.2.0] — 2026-05-16
+
+A minor release with one substantive algorithm change. **Behaviour-affecting**: callers who pin 0.1.x and upgrade will see different per-game play even with the same seed.
+
+### Changed (algorithm)
+
+- **First-Play Urgency (FPU) replaces the q=0 default for unvisited children.** PUCT used to default unvisited children's Q to 0; under a uniform evaluator (or any near-uniform prior + value≈0.5) this caused every sim to funnel into the first-touched slot — the visited slot's Q=0.5 dwarfed any exploration bonus until √N_total ≥ ~41. New formula (Leela / KataGo style):
+
+  ```
+  q_fpu = (1 - parent_Q_stored) - fpu_reduction * sqrt(sum_visited_priors)
+  ```
+
+  New `Config.fpu_reduction` knob, default `0.25` (KataGo non-root). The same shape applies to the leaf-parallel variant (`select_slot_puct_vloss`). Closes mcts-odin-caq.
+
+  This replaces the q=0 default wholesale — there is no `fpu_reduction` value that reproduces the old AlphaGo Zero default. The change is documented inline on `Config`.
+
+### Added
+
+- **`Config.fpu_reduction: f32`** (additive struct field, default `0.25`).
+- **Tree introspection dumps** (`mcts.dump_tree_dot`, `mcts.dump_tree_json`) in `mcts/debug.odin`. Both return caller-owned strings; pipe to Graphviz or parse with `core:encoding/json`. Documented in `EMBEDDING.md §8`. API stability: experimental. Closes mcts-odin-7gf.
+
+### Bench
+
+```
+mcts-odin (default):    22,611 ± 114 sims/s    (2.67x autogodin cpp, 7.91x autogodin odin)
+```
+
+The 1.6-2× jump over 0.1.1's 14,052 is mostly a measurement artifact: pre-FPU MCTS was spending all its time deep in the slot-0 corner subtree, so each sim traversed less depth per backup. With FPU the tree is broader/shallower and more representative of well-conditioned MCTS work. The bench has higher variance now because the tree shape depends on board state.
+
+### Migration
+
+If you relied on mcts-odin's 0.1.x play being reproducible against an external A/B harness (e.g. autogodin's cross-language A/B), expect different per-game outcomes. Set `cfg.fpu_reduction = 0` for a less aggressive FPU (unvisited q = parent_Q exactly, no reduction) but you cannot get back the q=0 default — that has been removed.
+
 ## [0.1.1] — 2026-05-16
 
 A patch release with two real bug fixes in the stable API plus accumulated internal perf and documentation. No stable-surface changes.
