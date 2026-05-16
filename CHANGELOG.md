@@ -13,6 +13,7 @@ Patch release: a single Go-board perf win + a new profile harness. No stable-sur
 ### Added
 
 - **`bench/profile/`** — wrapped-vtable timing harness. Drops timers around every Game-vtable entry point and the evaluator, then reports ms / %wall / calls / ns-per-call per bucket. The residual after measured buckets is the MCTS-core cost (PUCT, expand, create_node, backup). Used to anchor v0.5 perf picks in measurement rather than static-analysis guesses; closes mcts-odin-81j.7.
+- **`multi_group_merge_with_surviving_liberty`** test — regression coverage for the suicide-check path in the new `is_legal_flat`, where two friendly groups meet at the placed stone and one provides the surviving liberty. Go suite goes 25 → 26 tests (total 93 → 94).
 
 ## [0.4.0] — 2026-05-16
 

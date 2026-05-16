@@ -6,7 +6,7 @@ Games plug in by implementing a small `Game` vtable; the core knows nothing abou
 
 ## Status
 
-v0.4.1. Core + seven demo games + 93 passing tests under Odin's memory tracker.
+v0.4.1. Core + seven demo games + 94 passing tests under Odin's memory tracker.
 
 ### Throughput
 
@@ -144,7 +144,7 @@ games/
   breakthrough/     8×8 Breakthrough (Troyka 2000) — pawn movement + diagonal captures
   gomoku/           15×15 Free Gomoku — five-in-a-row, large branching factor
   go/               9×9 / 19×19 with Zobrist PSK, KataGo no-suicide, Tromp-Taylor scoring
-tests/            four test suites (run with: ./scripts/test.sh)
+tests/            seven test suites (run with: ./scripts/test.sh)
 examples/
   tictactoe_selfplay.odin       full self-play loop
   nn_evaluator_skeleton.odin    sequential + batched NN evaluator template
@@ -160,7 +160,7 @@ docs/             EMBEDDING.md (full contract) + UPSTREAM.md (sync log)
 
 ```bash
 ./scripts/build.sh           # build/libmcts_odin.so
-./scripts/test.sh            # all four suites, fails on leaks
+./scripts/test.sh            # all seven suites, fails on leaks
 odin test tests/games/breakthrough
 odin test tests/games/connect_four
 odin test tests/games/gomoku

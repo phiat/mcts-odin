@@ -133,6 +133,35 @@ multi_stone_suicide_illegal :: proc(t: ^testing.T) {
 	testing.expect_value(t, ag.at(&b, 2, 2), ag.EMPTY)
 }
 
+// Exercises the multi-group-merge branch of is_legal_flat's suicide check.
+// Two friendly groups meet at the placed stone; one has libs == {index},
+// the other has libs == {index, x}. The merged virtual group has liberty x,
+// so the move is legal. Regression coverage for the v0.4.1 rewrite that
+// replaced the clone-and-simulate path with an in-place liberty inspection.
+@(test)
+multi_group_merge_with_surviving_liberty :: proc(t: ^testing.T) {
+	b := ag.make_go_board(9)
+	defer ag.destroy_go_board(&b)
+
+	// Build a top-edge corner position. After this sequence, Black to play at
+	// (0, 1) sees:
+	//   (0,0) = B, group with libs = {(0,1)} only
+	//   (0,2) = B, group with libs = {(0,1), (1,2)}
+	//   (1,1) = W, part of a 2-stone white group with three liberties
+	// has_empty(0,1) = false (all three neighbors non-empty), so the suicide
+	// check fires. The (0,2) group provides the surviving liberty (1,2).
+	ag.play(&b, 0, 0); ag.play(&b, 0, 3) // B, W
+	ag.play(&b, 0, 2); ag.play(&b, 1, 0) // B, W
+	ag.play(&b, 8, 8); ag.play(&b, 1, 1) // B (filler), W
+
+	testing.expect(t, ag.is_legal(&b, 0, 1))
+	testing.expect(t, ag.play(&b, 0, 1))
+	testing.expect_value(t, ag.at(&b, 0, 1), ag.BLACK)
+	// The three Black stones are now one group; (1,2) is the surviving liberty.
+	testing.expect_value(t, ag.at(&b, 0, 0), ag.BLACK)
+	testing.expect_value(t, ag.at(&b, 0, 2), ag.BLACK)
+}
+
 @(test)
 capture_is_not_suicide :: proc(t: ^testing.T) {
 	b := ag.make_go_board(9)
