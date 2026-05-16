@@ -13,10 +13,10 @@ v0.4.1. Core + seven demo games + 94 passing tests under Odin's memory tracker.
 9×9 Go, 1600 sims/move × 32 moves, uniform-policy evaluator, single-thread, `-o:speed -no-bounds-check`:
 
 ```
-mcts-odin (default):   ~105,000 sims/s    (~12.4x autogodin cpp, ~36.7x autogodin odin)
+mcts-odin (default):   ~108,000 sims/s    (~12.8x autogodin cpp, ~37.8x autogodin odin)
 ```
 
-For reference, [autogodin](https://github.com/phiat/autogodin)'s comparable bench (same workload, evaluator marshalled through a Python callback) reports `cpp: 8,470` and `odin: 2,859` sims/s. The numbers aren't strictly comparable — mcts-odin's bench runs the evaluator inline in Odin without FFI — but the cumulative gap reflects the do/undo lift, packed slot storage, SoA hot fields, linear-space priors (no PUCT-loop `math.exp`), per-Tree scratch arena, subtree reuse, branchless argmax, `BOARD_SIZE_HINT`-friendly hot-path helpers, FPU producing a broader/shallower tree (fewer do_move/undo_move steps per sim), and a clone-free `is_legal_flat` that probes PSK via incremental Zobrist instead of cloning the board on every legality check.
+For reference, [autogodin](https://github.com/phiat/autogodin)'s comparable bench (same workload, evaluator marshalled through a Python callback) reports `cpp: 8,470` and `odin: 2,859` sims/s. The numbers aren't strictly comparable — mcts-odin's bench runs the evaluator inline in Odin without FFI — but the cumulative gap reflects the do/undo lift, packed slot storage, SoA hot fields, linear-space priors (no PUCT-loop `math.exp`), per-Tree scratch arena, subtree reuse, branchless argmax, `BOARD_SIZE_HINT`-friendly hot-path helpers, FPU producing a broader/shallower tree (fewer do_move/undo_move steps per sim), a clone-free `is_legal_flat` that probes PSK via incremental Zobrist instead of cloning the board on every legality check, and an open-addressing flat u64 hash set replacing the per-board `map[u64]struct{}` for PSK history.
 
 ## Quick start
 

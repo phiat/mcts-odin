@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented here. Versions follow [SemVer](https://semver.org/) once 1.0 lands; pre-1.0 is `0.MINOR.PATCH-stage`.
 
+## [Unreleased]
+
+### Changed
+
+- **Go: PSK `seen_hashes` map → flat u64 set (+3-5% bench).** Replace the per-board `map[u64]struct{}` with an open-addressing flat hash set (linear probing, backward-shift deletion, no tombstones). Zobrist keys come out of `splitmix64` already well-mixed, so the probe index is just `key & mask` — no extra hash function. Sentinel is `u64(max(u64))`; real-key collision probability is 2^-64 and asserted against in `ODIN_DEBUG` builds. Per-call ns drops `Legal_Actions 6204 → 5852`, `Do_Move 687 → 630`, `Undo_Move 124 → 113`. Smaller bench win than the initial 25% estimate — Odin's `map[u64]` is faster than expected — but the flat set also kills per-insert allocations and simplifies clone/destroy. Closes mcts-odin-81j.2.
+
 ## [0.4.1] — 2026-05-16
 
 Patch release: a single Go-board perf win + a new profile harness. No stable-surface changes.
