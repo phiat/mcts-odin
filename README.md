@@ -20,6 +20,8 @@ For reference, [autogodin](https://github.com/phiat/autogodin)'s comparable benc
 
 ## Quick start
 
+> **New to MCTS or this project?** [`docs/GETTING_STARTED.md`](docs/GETTING_STARTED.md) is a reading-and-running path that goes from "what does this do" to "I can wire a new game in" in under an hour.
+
 ```odin
 package main
 
