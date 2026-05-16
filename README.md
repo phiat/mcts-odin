@@ -1,5 +1,10 @@
 # mcts-odin
 
+[![CI](https://github.com/phiat/mcts-odin/actions/workflows/ci.yml/badge.svg)](https://github.com/phiat/mcts-odin/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![Version](https://img.shields.io/github/v/tag/phiat/mcts-odin?label=version&color=f47b30)](https://github.com/phiat/mcts-odin/releases)
+[![Odin](https://img.shields.io/badge/Odin-dev--2026--05-orange.svg)](https://odin-lang.org/)
+
 A generic, optimized Monte Carlo Tree Search package for [Odin](https://odin-lang.org/). AlphaZero-style PUCT with Dirichlet root noise + FPU (First-Play Urgency), optional fast rollouts, leaf-parallel batched playouts with virtual loss, and PCR (progressive computation reduction).
 
 Games plug in by implementing a small `Game` vtable; the core knows nothing about Go, chess, or any specific game. Ships with **tic-tac-toe**, **Connect Four**, **Reversi**, **Hex**, **Breakthrough**, **Gomoku**, **Dots and Boxes**, **Amazons**, **Quoridor**, and a **Go** (9×9 / 19×19) reference implementation.
