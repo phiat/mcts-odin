@@ -73,6 +73,7 @@ Node :: struct {
 	parent_idx:         int,
 	action_from_parent: int,   // the action the parent applied to reach this node; -1 for root
 	player_at_parent:   i32,   // perspective tracking; 0 or 1
+	cp_at_node:         i32,   // current_player at this node's position, cached at creation
 	depth:              int,
 
 	// Packed slot list. Sized at expansion time to len(policy returned by
@@ -179,6 +180,7 @@ init :: proc(t: ^Tree, game: ^Game, root_state: rawptr, config: Config, seed: u6
 		parent_idx         = -1,
 		action_from_parent = -1,
 		player_at_parent   = 1 - cp,
+		cp_at_node         = cp,
 		depth              = 0,
 		is_terminal        = game.is_terminal(root_state),
 	}
@@ -213,6 +215,7 @@ create_node :: proc(t: ^Tree, parent_idx: int, action: int, player_at_parent: i3
 		parent_idx         = parent_idx,
 		action_from_parent = action,
 		player_at_parent   = player_at_parent,
+		cp_at_node         = t.game.current_player(t.working_state),
 		depth              = depth,
 		is_terminal        = t.game.is_terminal(t.working_state),
 	}
@@ -237,12 +240,14 @@ tree_size :: proc(t: ^Tree) -> int {
 
 // Resolve a node's cached terminal value to the perspective of its
 // player_at_parent. Only meaningful when node.is_terminal is true.
+//
+// Uses the node's cached cp_at_node so callers no longer need to position
+// working_state at this node before invoking.
 @(private)
 terminal_value_for_node :: proc(t: ^Tree, node_idx: int) -> f32 {
 	node := &t.nodes[node_idx]
-	cp := t.game.current_player(t.working_state)
 	v := node.terminal_v_raw
-	if cp != node.player_at_parent {v = 1.0 - v}
+	if node.cp_at_node != node.player_at_parent {v = 1.0 - v}
 	return v
 }
 
@@ -281,6 +286,7 @@ reuse_root :: proc(t: ^Tree, action: int) -> bool {
 			parent_idx         = -1,
 			action_from_parent = -1,
 			player_at_parent   = 1 - cp,
+			cp_at_node         = cp,
 			depth              = 0,
 			is_terminal        = t.game.is_terminal(t.working_state),
 		}

@@ -111,7 +111,7 @@ descend_one :: proc(t: ^Tree) -> Pending_Leaf {
 		slot := select_slot_puct_vloss(t, current)
 		action := t.nodes[current].actions[slot]
 
-		cp_parent := t.game.current_player(t.working_state)
+		cp_parent := t.nodes[current].cp_at_node
 		delta := t.game.do_move(t.working_state, action)
 		append(&deltas, delta)
 
@@ -272,8 +272,9 @@ run_simulations_batched :: proc(
 					t.nodes[pl.leaf_idx].expanded = true
 				}
 				// v_theta is from snapshot's side-to-move perspective; flip if that
-				// differs from this leaf's player_at_parent.
-				cp_snap := t.game.current_player(pl.snapshot)
+				// differs from this leaf's player_at_parent. Snapshot's
+				// current_player is by construction equal to leaf's cached cp_at_node.
+				cp_snap := t.nodes[pl.leaf_idx].cp_at_node
 				persp := t.nodes[pl.leaf_idx].player_at_parent
 				U = (1.0 - v_theta) if cp_snap != persp else v_theta
 				if !t.nodes[pl.leaf_idx].has_eval {

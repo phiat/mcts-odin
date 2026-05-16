@@ -119,8 +119,7 @@ perform_playout :: proc(t: ^Tree, node_idx: int, evaluator: Evaluator, user_data
 	} else if t.node_N[node_idx] == 0 {
 		v_theta := expand_node(t, node_idx, evaluator, user_data)
 
-		cp := t.game.current_player(t.working_state)
-		if cp != player_perspective {v_theta = 1.0 - v_theta}
+		if t.nodes[node_idx].cp_at_node != player_perspective {v_theta = 1.0 - v_theta}
 
 		t.nodes[node_idx].first_eval_value = v_theta
 		t.nodes[node_idx].has_eval = true
@@ -140,10 +139,7 @@ perform_playout :: proc(t: ^Tree, node_idx: int, evaluator: Evaluator, user_data
 		slot := select_slot_puct(t, node_idx)
 		action := t.nodes[node_idx].actions[slot]
 
-		// Capture parent's current_player BEFORE applying the move so we can
-		// stamp it as the new child's player_at_parent. After do_move the
-		// working state's current_player has flipped.
-		cp_parent := t.game.current_player(t.working_state)
+		cp_parent := t.nodes[node_idx].cp_at_node
 		delta := t.game.do_move(t.working_state, action)
 
 		if t.nodes[node_idx].child[slot] < 0 {
