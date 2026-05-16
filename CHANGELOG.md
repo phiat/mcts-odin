@@ -2,6 +2,24 @@
 
 All notable changes to this project will be documented here. Versions follow [SemVer](https://semver.org/) once 1.0 lands; pre-1.0 is `0.MINOR.PATCH-stage`.
 
+## [0.4.0] — 2026-05-16
+
+Minor release: three new demo games (Hex, Breakthrough, Gomoku) wrap up the v0.4 roadmap (`mcts-odin-coj`). All additive — no existing API surface changed. Demo-game count goes 4 → 7; test suite 64 → 93.
+
+### Added
+
+- **Hex** (`games/hex/`) — 9×9 board (Piet Hein 1942 / John Nash 1948). First demo with **hexagonal-grid topology**: each cell has 6 neighbours via the skewed-rhombus convention. Win detection is connectivity-based — BFS from the placed stone over same-color cells, checking edge contact. No draws (Hex theorem). Closes mcts-odin-59x.
+
+- **Breakthrough** (`games/breakthrough/`) — 8×8 board (Dan Troyka, 2000). First demo with **piece movement**: 16 pawns per side, each moves one square forward (straight to empty or diagonal to empty/enemy). Win by reaching the opponent's back rank or capturing all enemy pawns. Action encoding is `from_cell × direction` (192 stable ids) with `forward_delta(player, dir)` mapping to player-aware row deltas. Closes mcts-odin-8ah.
+
+- **Gomoku** (`games/gomoku/`) — 15×15 board, Free ruleset. First demo with **large branching factor** (225 actions at the opening) — exercises MCTS scaling under uniform priors. Win by 5-or-more in a row in any of the 4 directions; overlines count. Closes mcts-odin-iqd.
+
+All three use zero-allocation Move_Delta packing — flags pack action + prev_to_play + prev_winner + prev_move_count + per-game state bits.
+
+### Tests
+
+`scripts/test.sh` now runs seven suites. New tests cover opening invariants, do/undo round-trips, all four win-direction patterns where applicable, and full MCTS self-play to termination for each game.
+
 ## [0.3.0] — 2026-05-16
 
 Minor release: OS-thread parallel MCTS lands. Additive — no existing API surface changed.
