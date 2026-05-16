@@ -30,6 +30,7 @@ import "core:math/rand"
 // legal moves before normalisation.
 // ============================================================================
 
+// API stability: stable.
 Evaluator :: #type proc(
 	state:       rawptr,
 	out_actions: []int,
@@ -225,6 +226,8 @@ add_dirichlet_noise :: proc(t: ^Tree, alpha, weight: f32) {
 
 // Run num_simulations playouts from the root, applying PCR if configured.
 // On entry/exit, t.working_state is at the root state.
+//
+// API stability: stable.
 run_simulations :: proc(t: ^Tree, num_simulations: int, evaluator: Evaluator, user_data: rawptr = nil) {
 	use_tree_rng(t)
 	free_all(t.scratch_allocator)

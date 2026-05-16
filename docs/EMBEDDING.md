@@ -168,3 +168,47 @@ for !my_game.is_terminal(tree.working_state) {
 ## 8. Threading
 
 Not yet. The current MCTS is single-threaded; leaf-parallelism is *algorithmic* (one tree, batched evaluator), not OS-thread parallelism. True root-parallel or tree-parallel MCTS is a future extension.
+
+## 9. API stability
+
+The package is pre-1.0. Below is what consumers can rely on vs. what may still move.
+
+### Stable (the contract you can pin against)
+
+These are the API shapes we don't intend to break on `0.x` patch/minor bumps. We may grow them additively (new fields with defaults, new optional args) but the existing surface is committed.
+
+| Symbol | Notes |
+|---|---|
+| `mcts.VERSION` | Package version string. |
+| `mcts.Game` | Struct & field names. Add a new field only at the end and behind a sentinel. |
+| `mcts.Move_Delta` | `{hash: u64, flags: u64, extra: rawptr}` — game implementations pack their reverse-move state into these slots. |
+| `mcts.Evaluator`, `mcts.Evaluator_Batched` | Proc signatures. |
+| `mcts.Config` | Struct & field names. Defaults from `default_config()` may shift. |
+| `mcts.init`, `mcts.destroy` | Primary lifecycle. |
+| `mcts.run_simulations`, `mcts.run_simulations_batched` | The two main search drivers. |
+| `mcts.reuse_root` | Subtree reuse contract documented in §5. |
+| `mcts.select_action`, `mcts.get_action_probabilities` | Move-selection readouts. |
+| `mcts.tree_size`, `mcts.get_root_visit_count`, `mcts.get_root_q_value` | Cheap diagnostics. |
+| `mcts.default_config` | Returns a `Config` populated with the recommended defaults. |
+| `Tree.working_state` field (read-only) | Convenience: the tree's owned root state. Use it for "is the game over?" checks between rounds. Never mutate or free it. |
+
+### Experimental (shape may change before 1.0)
+
+These work today but the *shape* might shift — e.g. `map[int]X` returns may switch to flat `[]X` slices keyed by slot, struct internals may be reorganised. If you depend on these, expect to refactor at 1.0.
+
+| Symbol | Why experimental |
+|---|---|
+| `mcts.Node` struct | Internal bookkeeping. Hot fields already moved out into `Tree` slices once; could move again. |
+| `mcts.Tree` struct (fields other than `working_state`) | Internal layout. Reach for the accessor procs instead. |
+| `mcts.get_child_visit_counts`, `get_child_q_values`, `get_child_first_eval_values`, `get_root_policy_priors`, `get_child_max_subtree_depths` | All return `map[int]X`. Allocates a map per call; awkward for fast inner-loops. Likely to grow flat-slice equivalents (or be replaced) before 1.0. |
+
+### Internal (do not access from consuming code)
+
+Everything in `mcts/` not listed above. Identifiers marked `@(private)` are unconditional internals; the package-private structs we don't list above (`Pending_Leaf`, slot-selection procs, RNG helpers) are also off-limits.
+
+### Versioning policy
+
+Pre-1.0 follows `0.MINOR.PATCH`:
+- **PATCH** (0.1.0 → 0.1.1): bug fixes, internal perf changes, doc updates. Stable surface untouched.
+- **MINOR** (0.1.x → 0.2.0): additive changes to stable surface; experimental surface may break. Migration notes in `CHANGELOG.md`.
+- **1.0.0**: experimental surface either promoted or removed. From 1.0 forward we follow strict SemVer.

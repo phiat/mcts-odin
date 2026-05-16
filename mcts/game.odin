@@ -4,6 +4,8 @@ package mcts
 // it. State is opaque (rawptr); the core never inspects it. All procs take the
 // state pointer that MCTS is currently working with.
 //
+// API stability: stable. Struct and field names are committed.
+//
 // Two-player zero-sum games are the primary target. current_player returns 0
 // or 1; values are reported in [0, 1] from the side-to-move's perspective and
 // flipped on the way up the tree. N-player support is a future extension and
@@ -65,6 +67,9 @@ Game :: struct {
 // pointer slot (for variable-length data like a captures stack allocated in
 // the tree arena). If your game needs more, allocate a struct and store the
 // pointer in extra.
+//
+// API stability: stable. The three-slot layout is committed; new slots only
+// arrive in a 1.0 or behind a sentinel field.
 Move_Delta :: struct {
 	hash:  u64,
 	flags: u64,

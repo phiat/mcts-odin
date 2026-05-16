@@ -15,6 +15,9 @@ import "core:math/rand"
 //   temperature == 0 -> argmax: one slot gets 1.0, rest get 0.0
 //   temperature  > 0 -> proportional to N(a)^(1/T)
 // If the root has no children yet, falls back to uniform over its action slots.
+//
+// API stability: stable. The map[int]f32 return shape is committed for now;
+// a flat-slice equivalent may be added in 0.x but won't replace this.
 get_action_probabilities :: proc(
 	t: ^Tree,
 	temperature: f32 = 1.0,
@@ -69,6 +72,8 @@ get_action_probabilities :: proc(
 
 // Sample an action from the visit-count distribution. temperature == 0 is
 // deterministic argmax; temperature > 0 samples categorically.
+//
+// API stability: stable.
 select_action :: proc(t: ^Tree, temperature: f32 = 1.0) -> int {
 	use_tree_rng(t)
 	probs := get_action_probabilities(t, temperature)
@@ -94,14 +99,19 @@ select_action :: proc(t: ^Tree, temperature: f32 = 1.0) -> int {
 	return last_action
 }
 
+// API stability: stable.
 get_root_visit_count :: proc(t: ^Tree) -> int {
 	return t.node_N[t.root_idx]
 }
 
+// API stability: stable.
 get_root_q_value :: proc(t: ^Tree) -> f32 {
 	return t.node_Q[t.root_idx]
 }
 
+// API stability: experimental — the map[int]X return shape is awkward for
+// inner-loop use and likely to gain a flat-slice variant (or be replaced)
+// before 1.0. Today's tests cover the current shape.
 get_child_visit_counts :: proc(t: ^Tree, allocator := context.allocator) -> map[int]int {
 	root := &t.nodes[t.root_idx]
 	out := make(map[int]int, len(root.actions), allocator)
@@ -112,6 +122,7 @@ get_child_visit_counts :: proc(t: ^Tree, allocator := context.allocator) -> map[
 	return out
 }
 
+// API stability: experimental (see get_child_visit_counts).
 get_child_q_values :: proc(t: ^Tree, allocator := context.allocator) -> map[int]f32 {
 	root := &t.nodes[t.root_idx]
 	out := make(map[int]f32, len(root.actions), allocator)
@@ -122,6 +133,7 @@ get_child_q_values :: proc(t: ^Tree, allocator := context.allocator) -> map[int]
 	return out
 }
 
+// API stability: experimental (see get_child_visit_counts).
 get_child_first_eval_values :: proc(t: ^Tree, allocator := context.allocator) -> map[int]f32 {
 	root := &t.nodes[t.root_idx]
 	out := make(map[int]f32, len(root.actions), allocator)
@@ -135,6 +147,8 @@ get_child_first_eval_values :: proc(t: ^Tree, allocator := context.allocator) ->
 }
 
 // Root priors (post-Dirichlet if noise was added).
+//
+// API stability: experimental (see get_child_visit_counts).
 get_root_policy_priors :: proc(t: ^Tree, allocator := context.allocator) -> map[int]f32 {
 	root := &t.nodes[t.root_idx]
 	out := make(map[int]f32, len(root.actions), allocator)
@@ -145,6 +159,9 @@ get_root_policy_priors :: proc(t: ^Tree, allocator := context.allocator) -> map[
 }
 
 // For each root child, the deepest depth reached in its subtree.
+//
+// API stability: experimental (see get_child_visit_counts). This one is
+// particularly debug-only and may be removed in favour of a generic tree dump.
 get_child_max_subtree_depths :: proc(t: ^Tree, allocator := context.allocator) -> map[int]int {
 	root := &t.nodes[t.root_idx]
 	out := make(map[int]int, len(root.actions), allocator)

@@ -25,6 +25,8 @@ import "core:mem/virtual"
 //     per-tree growing arena. destroy() frees the whole arena.
 // ============================================================================
 
+// API stability: stable. Field names are committed; default values from
+// default_config() may shift on minor bumps.
 Config :: struct {
 	c_puct:              f32,
 	lambda:              f32,  // 0 = pure value head, 1 = pure rollout
@@ -38,6 +40,7 @@ Config :: struct {
 	pcr_probs: []f32,
 }
 
+// API stability: stable.
 default_config :: proc() -> Config {
 	return Config {
 		c_puct              = 1.0,
@@ -57,6 +60,9 @@ default_config :: proc() -> Config {
 // Hot fields (N, N_virt, Q) live in parallel arrays on the Tree (t.node_N,
 // t.node_N_virt, t.node_Q) so the PUCT inner loop reads them with a much
 // tighter cache footprint than chasing the full Node struct on every child.
+//
+// API stability: experimental. Layout may change before 1.0 — reach for
+// the accessor procs in readout.odin rather than touching fields directly.
 Node :: struct {
 	first_eval_value: f32,
 	has_eval:         bool,
@@ -84,6 +90,10 @@ Node :: struct {
 	child:   []int,
 }
 
+// API stability: the struct is stable in that you `init` it by reference and
+// pass it to every entry point. Fields are internal except for `working_state`,
+// which is a stable read-only view of the tree's owned root state (use it for
+// "is the game over?" checks between rounds; never mutate or free it).
 Tree :: struct {
 	nodes:     [dynamic]Node,
 
@@ -141,6 +151,8 @@ Tree :: struct {
 // root_state is consumed: the tree takes ownership and will free it via
 // game.free when the tree is destroyed. Caller should not touch root_state
 // after this returns.
+//
+// API stability: stable.
 init :: proc(t: ^Tree, game: ^Game, root_state: rawptr, config: Config, seed: u64 = 0) {
 	t^ = {}
 	t.config = config
@@ -177,6 +189,7 @@ init :: proc(t: ^Tree, game: ^Game, root_state: rawptr, config: Config, seed: u6
 	append(&t.node_Q, f32(0))
 }
 
+// API stability: stable.
 destroy :: proc(t: ^Tree) {
 	if t.game != nil && t.game.free != nil && t.working_state != nil {
 		t.game.free(t.working_state)
@@ -217,6 +230,7 @@ use_tree_rng :: proc(t: ^Tree) {
 	context.random_generator = rand.default_random_generator(&t.rng_state)
 }
 
+// API stability: stable.
 tree_size :: proc(t: ^Tree) -> int {
 	return len(t.nodes)
 }
@@ -243,6 +257,8 @@ terminal_value_for_node :: proc(t: ^Tree, node_idx: int) -> f32 {
 // no slot, a fresh root node is allocated at the post-move position.
 //
 // Returns true if an existing subtree was reused, false on a synthetic root.
+//
+// API stability: stable.
 reuse_root :: proc(t: ^Tree, action: int) -> bool {
 	root := &t.nodes[t.root_idx]
 	reused_idx := -1

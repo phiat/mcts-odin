@@ -18,6 +18,7 @@ import "core:math/rand"
 // later use by the evaluator.
 // ============================================================================
 
+// API stability: stable.
 Evaluator_Batched :: #type proc(
 	states:      []rawptr,
 	out_actions: [][]int,    // pre-sliced views per state; length == game.max_actions each
@@ -147,6 +148,8 @@ descend_one :: proc(t: ^Tree) -> Pending_Leaf {
 // each descent path until the corresponding leaf has been evaluated and
 // backed up. The evaluator receives a slice of cloned leaf states; it must
 // not retain or free them.
+//
+// API stability: stable.
 run_simulations_batched :: proc(
 	t: ^Tree,
 	num_simulations:  int,
