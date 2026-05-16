@@ -121,7 +121,6 @@ is_terminal :: proc(state: rawptr) -> bool {
 terminal_value :: proc(state: rawptr) -> f32 {
 	s := cast(^State)state
 	if !s.is_term {return 0.5}
-	if i32(s.winner) == s.to_play {return 1.0}
 	return 0.0
 }
 

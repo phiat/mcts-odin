@@ -190,6 +190,10 @@ Most MCTS implementations are tied to a specific game (chess, Go, board engines)
 
 The core algorithm is a direct descendant of the MCTS in [ericjang/autogo](https://github.com/ericjang/autogo) (C++) via [autogodin](https://github.com/phiat/autogodin) (Odin port). This repo lifts the algorithm into a stand-alone, game-agnostic package.
 
+## Contributing
+
+Solo-maintained, pre-1.0. Bug reports and feature requests via [GitHub Issues](https://github.com/phiat/mcts-odin/issues) are welcome; please open an issue to discuss before sending a PR for anything larger than a typo so we don't end up duplicating work.
+
 ## License
 
 MIT. See [LICENSE](LICENSE).

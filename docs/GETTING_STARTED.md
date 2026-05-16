@@ -4,8 +4,9 @@ A reading-and-running path for someone new to this project — and, by way
 of it, to MCTS. Goes from "what does this do" to "I can wire a new game
 in" in under an hour.
 
-You will need [Odin](https://odin-lang.org/) installed (a recent nightly
-works). Everything else is in this repo.
+You will need [Odin](https://odin-lang.org/docs/install/) installed.
+This project tracks the `dev-2026-05` nightly (the same release CI pins);
+older nightlies may not compile. Everything else is in this repo.
 
 ## Five-minute orientation
 

@@ -108,9 +108,13 @@ mcts_undo_move :: proc(state: rawptr, delta: mcts.Move_Delta) {
 	free(ad)
 }
 
-// Returns the Game vtable for Go. The caller picks the board size when
-// constructing the initial state via new_state; max_actions is sized for the
-// largest board you intend to use with this vtable (defaults to 9x9 + pass).
+// Returns the Game vtable for Go. The `size` argument sets `max_actions` to
+// `size*size + 1` (board cells plus pass) — this MUST match the size you
+// pass to `new_state` for any state you intend to run through this vtable.
+// Mismatch is silent and dangerous: the MCTS core sizes its evaluator
+// scratch buffers from `max_actions` at `Tree.init` time, so a state with
+// more legal actions than the vtable's `max_actions` will produce
+// out-of-bounds writes when an evaluator fills the buffers. Default 9×9.
 game :: proc(size: int = 9) -> mcts.Game {
 	return mcts.Game {
 		clone          = clone_state,

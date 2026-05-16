@@ -36,7 +36,7 @@ import "../../mcts"
 //          bits  8..11  closed box 1 index (0..8), or 0xF if none
 //          bits 12..15  closed box 2 index (0..8), or 0xF if none
 //          bit      16  prev_to_play (0 or 1)
-//          bit      17  prev_winner is set (0 or 1)
+//          bit      17  reserved (unused, always 0)
 //          bits 18..19  prev_winner + 1 (0..2; 0=none, 1=Black, 2=White)
 //          bits 20..27  prev_score_0 (0..9)
 //          bits 28..35  prev_score_1 (0..9)
