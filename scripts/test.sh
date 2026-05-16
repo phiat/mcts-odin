@@ -12,6 +12,7 @@ SUITES=(
 	tests
 	tests/games/connect_four
 	tests/games/go
+	tests/games/reversi
 )
 
 for s in "${SUITES[@]}"; do

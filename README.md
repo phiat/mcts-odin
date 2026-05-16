@@ -1,12 +1,12 @@
 # mcts-odin
 
-A generic, optimized Monte Carlo Tree Search package for [Odin](https://odin-lang.org/). AlphaZero-style PUCT with Dirichlet root noise, optional fast rollouts, leaf-parallel batched playouts with virtual loss, and PCR (progressive computation reduction).
+A generic, optimized Monte Carlo Tree Search package for [Odin](https://odin-lang.org/). AlphaZero-style PUCT with Dirichlet root noise + FPU (First-Play Urgency), optional fast rollouts, leaf-parallel batched playouts with virtual loss, and PCR (progressive computation reduction).
 
-Games plug in by implementing a small `Game` vtable; the core knows nothing about Go, chess, or any specific game. Ships with **tic-tac-toe**, **Connect Four**, and a **Go** (9×9 / 19×19) reference implementation.
+Games plug in by implementing a small `Game` vtable; the core knows nothing about Go, chess, or any specific game. Ships with **tic-tac-toe**, **Connect Four**, **Reversi**, and a **Go** (9×9 / 19×19) reference implementation.
 
 ## Status
 
-v0.2.0. Core + three demo games + 48 passing tests under Odin's memory tracker.
+v0.2.0. Core + four demo games + 55 passing tests under Odin's memory tracker.
 
 ### Throughput
 
