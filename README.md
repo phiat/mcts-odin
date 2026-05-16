@@ -151,6 +151,7 @@ examples/
 bench/
   bench.odin                    9×9 Go throughput micro-bench vs autogodin baselines
   threaded/                     thread-scaling bench under a slow evaluator
+  profile/                      wrapped-vtable timing profile (Game vtable + evaluator buckets)
 scripts/          build / test helpers
 docs/             EMBEDDING.md (full contract) + UPSTREAM.md (sync log)
 ```
@@ -169,6 +170,7 @@ odin test tests/games/go
 odin run examples/tictactoe_selfplay.odin -file
 odin run examples/nn_evaluator_skeleton.odin -file
 odin run bench/threaded -o:speed -no-bounds-check
+odin run bench/profile  -o:speed -no-bounds-check
 ```
 
 Optimization knobs:

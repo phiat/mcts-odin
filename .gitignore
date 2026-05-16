@@ -16,6 +16,7 @@ CLAUDE.md
 build/
 bench/bench
 bench/threaded/threaded
+bench/profile/profile
 examples/*.bin
 *.so
 *.dylib
