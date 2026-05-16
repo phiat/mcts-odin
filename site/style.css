@@ -1,0 +1,318 @@
+:root {
+    --bg: #0d1117;
+    --bg-elev: #161b22;
+    --fg: #c9d1d9;
+    --fg-strong: #e6edf3;
+    --muted: #8b949e;
+    --accent: #f47b30;
+    --accent-soft: rgba(244, 123, 48, 0.10);
+    --border: #30363d;
+    --border-soft: #21262d;
+}
+
+@media (prefers-color-scheme: light) {
+    :root {
+        --bg: #ffffff;
+        --bg-elev: #f6f8fa;
+        --fg: #1f2328;
+        --fg-strong: #0f1419;
+        --muted: #59636e;
+        --accent: #cc5a16;
+        --accent-soft: rgba(204, 90, 22, 0.08);
+        --border: #d0d7de;
+        --border-soft: #d8dee4;
+    }
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+html { scroll-behavior: smooth; }
+
+body {
+    background: var(--bg);
+    color: var(--fg);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Helvetica Neue", Helvetica, Arial, sans-serif;
+    font-size: 16px;
+    line-height: 1.65;
+    padding: 3rem 1.5rem 4rem;
+    -webkit-font-smoothing: antialiased;
+}
+
+main {
+    max-width: 720px;
+    margin: 0 auto;
+}
+
+/* Header / brand */
+header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 1.5rem;
+    flex-wrap: wrap;
+    gap: 1.5rem;
+}
+
+.brand h1 {
+    font-size: 2.5rem;
+    font-weight: 700;
+    color: var(--fg-strong);
+    letter-spacing: -0.025em;
+    line-height: 1.1;
+}
+
+.brand .tagline {
+    color: var(--muted);
+    font-size: 1.05rem;
+    margin-top: 0.4rem;
+}
+
+nav {
+    display: flex;
+    gap: 1.4rem;
+    align-items: center;
+    margin-top: 0.75rem;
+    flex-wrap: wrap;
+}
+
+nav a {
+    color: var(--muted);
+    text-decoration: none;
+    font-size: 0.92rem;
+    transition: color 0.15s ease;
+}
+
+nav a:hover { color: var(--accent); }
+
+/* Inline links inside prose */
+.inline-link, p a:not(.inline-link) {
+    color: var(--accent);
+    text-decoration: none;
+    border-bottom: 1px solid transparent;
+    transition: border-color 0.15s ease;
+}
+
+.inline-link:hover, p a:not(.inline-link):hover {
+    border-bottom-color: var(--accent);
+}
+
+/* Badges */
+.badges {
+    display: flex;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+    margin-bottom: 2.5rem;
+}
+
+.badges img { height: 20px; }
+
+/* Sections */
+.intro p { margin-bottom: 1rem; }
+
+section {
+    margin-bottom: 3.5rem;
+}
+
+h2 {
+    font-size: 1.4rem;
+    font-weight: 600;
+    margin-bottom: 1rem;
+    color: var(--fg-strong);
+    letter-spacing: -0.01em;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+h2::before {
+    content: "→";
+    color: var(--accent);
+    font-weight: 400;
+}
+
+p {
+    margin-bottom: 1rem;
+}
+
+.subtitle {
+    color: var(--muted);
+    font-size: 0.88rem;
+    margin-top: -0.5rem;
+    margin-bottom: 1rem;
+}
+
+/* Code */
+code {
+    background: var(--bg-elev);
+    color: var(--accent);
+    padding: 0.15rem 0.4rem;
+    border-radius: 4px;
+    font-family: "JetBrains Mono", "SF Mono", "Cascadia Code", Menlo, Consolas, "Courier New", monospace;
+    font-size: 0.88em;
+    border: 1px solid var(--border-soft);
+}
+
+pre {
+    background: var(--bg-elev);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 1.25rem 1.5rem;
+    overflow-x: auto;
+    font-size: 0.85rem;
+    line-height: 1.6;
+    margin-bottom: 1rem;
+}
+
+pre code {
+    background: transparent;
+    color: var(--fg);
+    padding: 0;
+    border: none;
+    font-size: inherit;
+}
+
+pre.diagram {
+    font-size: 0.72rem;
+    color: var(--muted);
+    line-height: 1.4;
+    padding: 1rem 1.5rem;
+}
+
+/* Table */
+table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-bottom: 1rem;
+    background: var(--bg-elev);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    overflow: hidden;
+}
+
+th, td {
+    text-align: left;
+    padding: 0.85rem 1rem;
+    border-bottom: 1px solid var(--border-soft);
+    font-variant-numeric: tabular-nums;
+}
+
+tr:last-child td { border-bottom: none; }
+
+th {
+    color: var(--muted);
+    font-weight: 500;
+    font-size: 0.78rem;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    background: var(--bg);
+}
+
+td.num, th.num { text-align: right; font-feature-settings: "tnum"; }
+
+tr.hero { background: var(--accent-soft); }
+tr.hero td:first-child {
+    color: var(--accent);
+    font-weight: 600;
+}
+tr.hero td.num { color: var(--fg-strong); font-weight: 600; }
+
+/* Notes */
+.note {
+    color: var(--muted);
+    font-size: 0.88rem;
+}
+
+/* Games list */
+ul.games {
+    list-style: none;
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 0;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    overflow: hidden;
+    background: var(--bg-elev);
+}
+
+ul.games li {
+    padding: 0.85rem 1rem;
+    border-bottom: 1px solid var(--border-soft);
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 1rem;
+    flex-wrap: wrap;
+}
+
+ul.games li:last-child { border-bottom: none; }
+
+ul.games li strong {
+    color: var(--fg-strong);
+    font-weight: 600;
+}
+
+.game-meta {
+    color: var(--muted);
+    font-size: 0.86rem;
+    font-family: "JetBrains Mono", "SF Mono", Menlo, Consolas, monospace;
+}
+
+/* Bulleted lists in prose */
+ul.bullets {
+    list-style: none;
+    margin-bottom: 1rem;
+}
+
+ul.bullets li {
+    padding: 0.5rem 0 0.5rem 1.25rem;
+    position: relative;
+    margin-bottom: 0.25rem;
+}
+
+ul.bullets li::before {
+    content: "·";
+    color: var(--accent);
+    position: absolute;
+    left: 0;
+    top: 0.5rem;
+    font-weight: 700;
+    font-size: 1.2em;
+}
+
+ul.bullets li strong {
+    color: var(--fg-strong);
+    font-weight: 600;
+}
+
+/* Footer */
+footer {
+    margin-top: 5rem;
+    padding-top: 2rem;
+    border-top: 1px solid var(--border);
+    color: var(--muted);
+    font-size: 0.88rem;
+}
+
+footer a {
+    color: var(--muted);
+    text-decoration: none;
+    border-bottom: 1px solid var(--border);
+    transition: border-color 0.15s, color 0.15s;
+}
+
+footer a:hover {
+    color: var(--accent);
+    border-bottom-color: var(--accent);
+}
+
+/* Mobile */
+@media (max-width: 600px) {
+    body { padding: 2rem 1rem 3rem; }
+    .brand h1 { font-size: 2rem; }
+    header { flex-direction: column; gap: 0.5rem; }
+    nav { margin-top: 0; }
+    pre { padding: 1rem; font-size: 0.8rem; }
+    pre.diagram { font-size: 0.6rem; }
+    th, td { padding: 0.7rem 0.6rem; font-size: 0.92rem; }
+    ul.games li { flex-direction: column; gap: 0.25rem; align-items: flex-start; }
+}
