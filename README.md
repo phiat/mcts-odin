@@ -6,7 +6,7 @@ Games plug in by implementing a small `Game` vtable; the core knows nothing abou
 
 ## Status
 
-v0.4.0. Core + seven demo games + 93 passing tests under Odin's memory tracker.
+v0.4.1. Core + seven demo games + 93 passing tests under Odin's memory tracker.
 
 ### Throughput
 

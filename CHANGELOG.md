@@ -2,11 +2,17 @@
 
 All notable changes to this project will be documented here. Versions follow [SemVer](https://semver.org/) once 1.0 lands; pre-1.0 is `0.MINOR.PATCH-stage`.
 
-## [Unreleased]
+## [0.4.1] — 2026-05-16
+
+Patch release: a single Go-board perf win + a new profile harness. No stable-surface changes.
 
 ### Changed
 
 - **Go: `is_legal_flat` rewritten — 2.3× bench speedup.** Replaced the clone-and-simulate path (board slice + `seen_hashes` map clone per candidate, then `play_flat_unchecked` and inspect) with an in-place test: capture detection flood-fills opp neighbour groups once, suicide is decided from friendly-group liberty counts, and the would-be PSK hash is computed incrementally (`current_hash XOR placed XOR captured stones`). 9×9 Go bench goes 45.3k → 105k sims/s (single-thread, uniform evaluator). Per-call `legal_actions` cost drops 33µs → 6µs in the profile harness. Closes mcts-odin-81j.8 (step 1).
+
+### Added
+
+- **`bench/profile/`** — wrapped-vtable timing harness. Drops timers around every Game-vtable entry point and the evaluator, then reports ms / %wall / calls / ns-per-call per bucket. The residual after measured buckets is the MCTS-core cost (PUCT, expand, create_node, backup). Used to anchor v0.5 perf picks in measurement rather than static-analysis guesses; closes mcts-odin-81j.7.
 
 ## [0.4.0] — 2026-05-16
 
