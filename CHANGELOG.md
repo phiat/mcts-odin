@@ -8,6 +8,10 @@ All notable changes to this project will be documented here. Versions follow [Se
 
 - **Go: PSK `seen_hashes` map → flat u64 set (+3-5% bench).** Replace the per-board `map[u64]struct{}` with an open-addressing flat hash set (linear probing, backward-shift deletion, no tombstones). Zobrist keys come out of `splitmix64` already well-mixed, so the probe index is just `key & mask` — no extra hash function. Sentinel is `u64(max(u64))`; real-key collision probability is 2^-64 and asserted against in `ODIN_DEBUG` builds. Per-call ns drops `Legal_Actions 6204 → 5852`, `Do_Move 687 → 630`, `Undo_Move 124 → 113`. Smaller bench win than the initial 25% estimate — Odin's `map[u64]` is faster than expected — but the flat set also kills per-insert allocations and simplifies clone/destroy. Closes mcts-odin-81j.2.
 
+- **MCTS RNG: `core:math/rand` → inlined xoshiro256++.** Tree and Worker now hold `Xoshiro256pp` state (4×u64) plus a `NormalCache` for the polar Marsaglia sampler. `gamma_sample` / `sample_packed_action` take explicit RNG pointers instead of binding via `context.random_generator`. `use_tree_rng` removed. Bench-neutral on the default 9×9 Go workload (`dirichlet_alpha = 0`, `lambda = 0` → no RNG calls), but ~5-10ns saved per call on Dirichlet- or fast-rollout-heavy training configs. The random stream changes — no determinism tests check golden RNG outputs. Closes mcts-odin-81j.3.
+
+- **Dirichlet sampler batched.** `add_dirichlet_noise` precomputes the Marsaglia-Tsang constants (`d`, `c`) once instead of per-sample, inlines the gamma inner loop, and folds normalization into the prior-mix step. On Dirichlet-enabled configs: ~100ns saved per root slot per noise call (~36 µs for 19×19 Go's 362 slots). Closes mcts-odin-81j.6.
+
 ## [0.4.1] — 2026-05-16
 
 Patch release: a single Go-board perf win + a new profile harness. No stable-surface changes.
