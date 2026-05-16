@@ -4,9 +4,22 @@ How to drop the package into your own Odin project, and how to expose it through
 
 ## 1. Get the source into your project
 
-There's no Odin package manager. Two options:
+There's no Odin package manager. Three options, all tested:
 
-**Sibling clone.** Clone `mcts-odin` next to your project and import with relative paths:
+**Sibling clone + collection (recommended).** Clone `mcts-odin` next to your project and register it as an Odin collection at build time. Inside your code, the import names are stable regardless of where the checkout lives:
+
+```odin
+import "mcts:mcts"                    // the core
+import ttt "mcts:games/tictactoe"     // a demo game (optional)
+```
+
+```bash
+odin run . -collection:mcts=/path/to/mcts-odin
+```
+
+This is what `autogodin` uses to vendor mcts-odin as a dep without copying source.
+
+**Sibling clone + relative path.** Same on-disk layout, but `import` with relative paths. Simpler, breaks if you ever move things:
 
 ```
 my-project/
@@ -15,7 +28,7 @@ mcts-odin/
   mcts/
 ```
 
-**Vendor.** Copy `mcts/` (and any `games/` you want) into your project's `vendor/` tree and import with normal paths. Pin a commit hash in your README.
+**Vendor copy.** Copy `mcts/` (and any `games/` you want) into your project's `vendor/` tree and import with normal paths. Pin a commit hash in your README.
 
 Either way, only the `mcts/` directory is mandatory. `games/`, `tests/`, `examples/`, and `bench/` are optional and exist for development/demo.
 
