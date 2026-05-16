@@ -16,7 +16,10 @@ v0.5.0. Core + ten demo games + 124 passing tests under Odin's memory tracker.
 mcts-odin (default):   ~108,000 sims/s    (~12.8x autogodin cpp, ~37.8x autogodin odin)
 ```
 
-For reference, [autogodin](https://github.com/phiat/autogodin)'s comparable bench (same workload, evaluator marshalled through a Python callback) reports `cpp: 8,470` and `odin: 2,859` sims/s. The numbers aren't strictly comparable — mcts-odin's bench runs the evaluator inline in Odin without FFI — but the cumulative gap reflects the do/undo lift, packed slot storage, SoA hot fields, linear-space priors (no PUCT-loop `math.exp`), per-Tree scratch arena, subtree reuse, branchless argmax, `BOARD_SIZE_HINT`-friendly hot-path helpers, FPU producing a broader/shallower tree (fewer do_move/undo_move steps per sim), a clone-free `is_legal_flat` that probes PSK via incremental Zobrist instead of cloning the board on every legality check, and an open-addressing flat u64 hash set replacing the per-board `map[u64]struct{}` for PSK history.
+For reference, [autogodin](https://github.com/phiat/autogodin)'s comparable bench (same workload, evaluator marshalled through a Python callback) reports `cpp: 8,470` and `odin: 2,859` sims/s. The numbers aren't strictly comparable — mcts-odin runs its evaluator inline in Odin without FFI — but the cumulative gap reflects:
+
+- **MCTS core:** in-place do/undo (no per-node clones), packed slot storage with SoA hot fields (`N`, `N_virt`, `Q`), linear-space priors (no `math.exp` in the PUCT loop), branchless argmax, per-tree scratch arena, subtree reuse, FPU producing a broader/shallower tree, inlined xoshiro256++ RNG.
+- **Go board:** clone-free `is_legal_flat` (incremental Zobrist for PSK probes instead of board clones), open-addressing flat u64 hash set for PSK history, `BOARD_SIZE_HINT`-friendly hot-path helpers.
 
 ## Quick start
 
@@ -122,8 +125,6 @@ Game :: struct {
 }
 ```
 
-The MCTS core uses `do_move`/`undo_move` on a single working state per tree — it never clones the state at internal nodes. This is the key performance lever: a Go-board clone (board + Zobrist history map) is several times costlier than a `do_move`/`undo_move` pair, and a deep tree creates thousands of nodes.
-
 See [`docs/EMBEDDING.md`](docs/EMBEDDING.md) for the full contract, evaluator signatures (sequential + batched), subtree reuse (`mcts.reuse_root(action)`), tuning knobs, and memory model.
 
 ## Layout
@@ -131,22 +132,26 @@ See [`docs/EMBEDDING.md`](docs/EMBEDDING.md) for the full contract, evaluator si
 ```
 mcts/             generic MCTS core (game-agnostic)
   game.odin         Game vtable + Move_Delta
-  mcts.odin         Tree / Node / Config + init / destroy + shared driver helpers
+  mcts.odin         Tree / Node / Config + init / destroy
   playout.odin      Evaluator type, sequential run_simulations + fast_rollout
   batched.odin      leaf-parallel run_simulations_batched (virtual loss)
-  threaded.odin     OS-thread parallel run_simulations_threaded (atomics + expand mutex)
+  threaded.odin     OS-thread parallel run_simulations_threaded
   readout.odin      select_action + visit/Q/priors readouts
+  rng.odin          xoshiro256++ + gamma sampler + categorical helper
   debug.odin        dump_tree_dot / dump_tree_json (experimental)
-  rng.odin          gamma sampler + categorical helper
+  version.odin      VERSION constant
 games/
   tictactoe/        3×3 solved-game sanity demo
   connect_four/     7×6 column-drop demo
   reversi/          8×8 Reversi (Othello) with zero-alloc Move_Delta packing
-  hex/              9×9 Hex with hex-grid topology and BFS win detection
+  hex/              9×9 Hex — hexagonal-grid topology + BFS win detection
   breakthrough/     8×8 Breakthrough (Troyka 2000) — pawn movement + diagonal captures
   gomoku/           15×15 Free Gomoku — five-in-a-row, large branching factor
+  dots_and_boxes/   4×4 dot grid — extra-turn on box close breaks to_play alternation
+  amazons/          6×6 — two-stage moves (queen slide + arrow shot)
+  quoridor/         5×5 — heterogeneous action space + per-candidate BFS validation
   go/               9×9 / 19×19 with Zobrist PSK, KataGo no-suicide, Tromp-Taylor scoring
-tests/            seven test suites (run with: ./scripts/test.sh)
+tests/            10 suites (./scripts/test.sh runs all, fails on leaks)
 examples/
   tictactoe_selfplay.odin       full self-play loop
   nn_evaluator_skeleton.odin    sequential + batched NN evaluator template
@@ -155,25 +160,18 @@ bench/
   threaded/                     thread-scaling bench under a slow evaluator
   profile/                      wrapped-vtable timing profile (Game vtable + evaluator buckets)
 scripts/          build / test helpers
-docs/             EMBEDDING.md (full contract) + UPSTREAM.md (sync log)
+docs/             GETTING_STARTED.md, EMBEDDING.md, UPSTREAM.md
 ```
 
 ## Build
 
 ```bash
-./scripts/build.sh           # build/libmcts_odin.so
-./scripts/test.sh            # all seven suites, fails on leaks
-odin test tests/games/breakthrough
-odin test tests/games/connect_four
-odin test tests/games/gomoku
-odin test tests/games/reversi
-odin test tests/games/hex
-odin test tests/games/go
-odin run examples/tictactoe_selfplay.odin -file
-odin run examples/nn_evaluator_skeleton.odin -file
-odin run bench/threaded -o:speed -no-bounds-check
-odin run bench/profile  -o:speed -no-bounds-check
+./scripts/build.sh                                  # build/libmcts_odin.so
+./scripts/test.sh                                   # all 10 suites, fails on leaks
+odin run examples/tictactoe_selfplay.odin -file -o:speed
 ```
+
+For per-suite test runs, individual benches, and the profile harness, see [`docs/GETTING_STARTED.md`](docs/GETTING_STARTED.md).
 
 Optimization knobs:
 
