@@ -116,7 +116,7 @@ do_move :: proc(state: rawptr, action: int) -> mcts.Move_Delta {
 undo_move :: proc(state: rawptr, delta: mcts.Move_Delta) {
 	s := cast(^State)state
 	action := int((delta.flags >> 8) & 0xFF)
-	prev_to_play := i32((delta.flags >> 16) & 0xFFFF)
+	prev_to_play := i32((delta.flags >> 16) & 0x1)
 	prev_move_count := i32(u32(delta.flags >> 32))
 	set_winner_flag := (delta.flags & 1) != 0
 

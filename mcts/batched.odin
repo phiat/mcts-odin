@@ -1,7 +1,6 @@
 package mcts
 
 import "core:math"
-import "core:math/rand"
 
 // ============================================================================
 // Leaf-parallel MCTS with virtual loss.
@@ -172,26 +171,7 @@ run_simulations_batched :: proc(
 ) {
 	use_tree_rng(t)
 	free_all(t.scratch_allocator)
-	if num_simulations > 0 {
-		want := len(t.nodes) + min(num_simulations, 1 << 20)
-		if cap(t.nodes) < want {
-			reserve(&t.nodes, want)
-			reserve(&t.node_N, want)
-			reserve(&t.node_N_virt, want)
-			reserve(&t.node_Q, want)
-		}
-	}
-	n_sims := num_simulations
-	if len(t.config.pcr_sims) > 0 {
-		r := rand.float32()
-		cum := f32(0)
-		pick := len(t.config.pcr_sims) - 1
-		for i in 0 ..< len(t.config.pcr_probs) {
-			cum += t.config.pcr_probs[i]
-			if r < cum {pick = i; break}
-		}
-		n_sims = t.config.pcr_sims[pick]
-	}
+	n_sims := resolve_n_sims(t, num_simulations)
 
 	cap_n := t.game.max_actions
 

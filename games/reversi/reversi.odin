@@ -1,5 +1,6 @@
 package reversi
 
+import "base:intrinsics"
 import "../../mcts"
 
 // 8x8 Reversi (Othello). Players: 0 = Black (moves first), 1 = White.
@@ -269,7 +270,7 @@ undo_move :: proc(state: rawptr, delta: mcts.Move_Delta) {
 		opp := i8(1 - prev_to_play)
 		bm := flip_bitmask
 		for bm != 0 {
-			i := lsb_index(bm)
+			i := int(intrinsics.count_trailing_zeros(bm))
 			s.cells[i] = opp
 			bm &= bm - 1 // clear lowest bit
 		}
@@ -278,20 +279,6 @@ undo_move :: proc(state: rawptr, delta: mcts.Move_Delta) {
 	s.to_play = prev_to_play
 	s.consecutive_passes = prev_passes
 	s.move_count = prev_count
-}
-
-@(private)
-lsb_index :: proc "contextless" (x: u64) -> int {
-	// Count trailing zeros via the standard "x & -x" isolation trick, then
-	// a small lookup. For 8x8 boards N=64; a portable loop is fine.
-	if x == 0 {return -1}
-	low := x & (~x + 1)
-	idx := 0
-	for low > 1 {
-		low >>= 1
-		idx += 1
-	}
-	return idx
 }
 
 // Returns the mcts.Game vtable.

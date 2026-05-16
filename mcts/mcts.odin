@@ -272,6 +272,44 @@ use_tree_rng :: proc(t: ^Tree) {
 	context.random_generator = rand.default_random_generator(&t.rng_state)
 }
 
+// Shared preamble for the three run_simulations drivers. Reserves node-storage
+// capacity for the worst-case "one new node per sim" growth so the hot path
+// never realloc-copies the SoA arrays, then returns the effective sim count
+// (config-level PCR sampling can override the caller's requested number).
+// Callers must have already free_all'd the scratch arena (this proc does not,
+// because the threaded driver uses per-worker scratch arenas).
+@(private)
+resolve_n_sims :: proc(t: ^Tree, num_simulations: int) -> int {
+	if num_simulations > 0 {
+		want := len(t.nodes) + min(num_simulations, 1 << 20)
+		if cap(t.nodes) < want {
+			reserve(&t.nodes, want)
+			reserve(&t.node_N, want)
+			reserve(&t.node_N_virt, want)
+			reserve(&t.node_Q, want)
+		}
+	}
+	if len(t.config.pcr_sims) == 0 {return num_simulations}
+	r := rand.float32()
+	cum := f32(0)
+	pick := len(t.config.pcr_sims) - 1
+	for i in 0 ..< len(t.config.pcr_probs) {
+		cum += t.config.pcr_probs[i]
+		if r < cum {pick = i; break}
+	}
+	return t.config.pcr_sims[pick]
+}
+
+// Apply Dirichlet noise to the root once per search round, if configured.
+// No-op when alpha == 0 or the root has already been noised this round.
+@(private)
+maybe_add_root_dirichlet :: proc(t: ^Tree) {
+	if !t.root_noised && t.config.dirichlet_alpha > 0 {
+		add_dirichlet_noise(t, t.config.dirichlet_alpha, t.config.dirichlet_weight)
+		t.root_noised = true
+	}
+}
+
 // API stability: stable.
 tree_size :: proc(t: ^Tree) -> int {
 	return len(t.nodes)

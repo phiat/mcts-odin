@@ -1,5 +1,6 @@
 package tests
 
+import "core:strings"
 import "core:testing"
 import "../mcts"
 import ttt "../games/tictactoe"
@@ -289,9 +290,9 @@ ttt_dump_tree_dot_well_formed :: proc(t: ^testing.T) {
 	defer delete(s)
 	testing.expect(t, len(s) > 0)
 	// digraph header + node label + at least one edge
-	testing.expect(t, contains(s, "digraph mcts"))
-	testing.expect(t, contains(s, "n0 [label="))
-	testing.expect(t, contains(s, " -> "))
+	testing.expect(t, strings.contains(s, "digraph mcts"))
+	testing.expect(t, strings.contains(s, "n0 [label="))
+	testing.expect(t, strings.contains(s, " -> "))
 }
 
 @(test)
@@ -309,8 +310,8 @@ ttt_dump_tree_json_well_formed :: proc(t: ^testing.T) {
 	testing.expect(t, len(s) > 0)
 	testing.expect(t, s[0] == '{')
 	testing.expect(t, s[len(s)-1] == '}')
-	testing.expect(t, contains(s, "\"root_idx\":0"))
-	testing.expect(t, contains(s, "\"nodes\":["))
+	testing.expect(t, strings.contains(s, "\"root_idx\":0"))
+	testing.expect(t, strings.contains(s, "\"nodes\":["))
 }
 
 // Regression for mcts-odin-caq: under uniform-policy evaluator + value=0.5 +
@@ -540,12 +541,3 @@ ttt_remaining_readouts_well_formed :: proc(t: ^testing.T) {
 	testing.expectf(t, max_d >= 1, "expected at least one child subtree of depth >=1 after 100 sims, got max %d", max_d)
 }
 
-@(private = "file")
-contains :: proc(haystack, needle: string) -> bool {
-	if len(needle) == 0 {return true}
-	if len(needle) > len(haystack) {return false}
-	for i in 0 ..= len(haystack) - len(needle) {
-		if haystack[i:i+len(needle)] == needle {return true}
-	}
-	return false
-}

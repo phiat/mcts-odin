@@ -88,36 +88,14 @@ run_simulations_threaded :: proc(
 ) {
 	use_tree_rng(t)
 	free_all(t.scratch_allocator)
-	if num_simulations > 0 {
-		want := len(t.nodes) + min(num_simulations, 1 << 20)
-		if cap(t.nodes) < want {
-			reserve(&t.nodes, want)
-			reserve(&t.node_N, want)
-			reserve(&t.node_N_virt, want)
-			reserve(&t.node_Q, want)
-		}
-	}
-	n_sims := num_simulations
-	if len(t.config.pcr_sims) > 0 {
-		r := rand.float32()
-		cum := f32(0)
-		pick := len(t.config.pcr_sims) - 1
-		for i in 0 ..< len(t.config.pcr_probs) {
-			cum += t.config.pcr_probs[i]
-			if r < cum {pick = i; break}
-		}
-		n_sims = t.config.pcr_sims[pick]
-	}
+	n_sims := resolve_n_sims(t, num_simulations)
 
 	// Single-threaded prelude: root expansion + Dirichlet noise. Done here so
 	// all workers enter with the root fully ready, eliminating a startup race.
 	if !t.nodes[t.root_idx].expanded && !t.nodes[t.root_idx].is_terminal {
 		_ = expand_node(t, t.root_idx, evaluator, user_data)
 	}
-	if !t.root_noised && t.config.dirichlet_alpha > 0 {
-		add_dirichlet_noise(t, t.config.dirichlet_alpha, t.config.dirichlet_weight)
-		t.root_noised = true
-	}
+	maybe_add_root_dirichlet(t)
 
 	if n_sims <= 0 {return}
 

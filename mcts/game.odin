@@ -28,10 +28,10 @@ Game :: struct {
 	// Reverse do_move. After undo_move(delta), state must be observably
 	// identical to its value immediately before the matching do_move.
 	//
-	// May be nil — when nil, MCTS falls back to clone-on-descent (slower but
-	// works for games whose state is awkward to reverse). The build script
-	// asserts at init time that exactly one of (undo_move != nil) or
-	// (clone-on-descent mode) is selected.
+	// Required — there is currently no clone-on-descent fallback. A nil
+	// undo_move will crash on the first descent step. Games whose state is
+	// genuinely irreversible can pack everything needed for restoration into
+	// Move_Delta.extra (heap allocation) at the cost of one alloc per move.
 	undo_move: proc(state: rawptr, delta: Move_Delta),
 
 	// True if the position is terminal (no further moves; outcome decided).
