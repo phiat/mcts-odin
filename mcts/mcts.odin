@@ -12,11 +12,17 @@ import "core:mem/virtual"
 // it lives here, none of it cares which game is running.
 //
 // Storage layout:
+//   - The Tree owns a single `working_state`. Simulations mutate it on the way
+//     down (do_move) and restore it on the way up (undo_move). No per-node
+//     state pointer; nodes are pure tree-bookkeeping and never carry a copy
+//     of the game state.
 //   - Each Node carries a packed action list (actions/logP/child slices), all
 //     sized to the policy length at first evaluation. PUCT scan is a single
 //     tight loop over these arrays — no map hashes on the hot path.
-//   - All tree-internal allocations (nodes, per-node slices, cloned states)
-//     live in a per-tree growing arena. destroy() frees the whole arena.
+//   - is_terminal and a perspective-raw terminal_value are cached on each
+//     Node at creation, so the PUCT descent never re-asks the game.
+//   - All tree-internal allocations (nodes, per-node slices) live in a
+//     per-tree growing arena. destroy() frees the whole arena.
 // ============================================================================
 
 Config :: struct {
@@ -44,21 +50,23 @@ default_config :: proc() -> Config {
 	}
 }
 
-// Single tree node. State pointer is owned by the tree's arena and freed when
-// the tree is destroyed. parent_idx is -1 for the root.
+// One tree node. Carries no copy of the game state — state is reconstructed
+// on demand by descending from root with do_move along the recorded action
+// path, and unwound with undo_move on the way back.
 Node :: struct {
 	N:                int,
 	N_virt:           int,
 	Q:                f32,
 	first_eval_value: f32,
 	has_eval:         bool,
-	expanded:         bool,  // true once the evaluator's policy has been folded into actions/logP
+	expanded:         bool,    // true once the evaluator's policy has been folded into actions/logP
+	is_terminal:      bool,    // cached at node creation
+	terminal_v_raw:   f32,     // terminal_value from this node's current_player perspective (cached)
 
-	parent_idx:       int,
-	player_at_parent: i32,   // perspective tracking; 0 or 1
-	depth:            int,
-
-	state:            rawptr,
+	parent_idx:         int,
+	action_from_parent: int,   // the action the parent applied to reach this node; -1 for root
+	player_at_parent:   i32,   // perspective tracking; 0 or 1
+	depth:              int,
 
 	// Packed slot list. Sized at expansion time to len(policy returned by
 	// the evaluator) — typically equal to legal_actions count when the user
@@ -78,8 +86,13 @@ Tree :: struct {
 	game:      ^Game,
 	rng_state: rand.Default_Random_State,
 
-	// Per-tree growing arena. Nodes, per-node slot arrays, game-state clones —
-	// all allocated through this. destroy() frees it all in one shot.
+	// The tree's single working state. Owned by the tree, freed via game.free
+	// in destroy(). Mutated in-place during descents and restored at the end
+	// of each simulation so it always equals the root state between sims.
+	working_state: rawptr,
+
+	// Per-tree growing arena. Nodes and per-node slot arrays come from here.
+	// destroy() frees it all in one shot.
 	arena:     virtual.Arena,
 	allocator: runtime.Allocator,
 }
@@ -95,6 +108,7 @@ init :: proc(t: ^Tree, game: ^Game, root_state: rawptr, config: Config, seed: u6
 	t^ = {}
 	t.config = config
 	t.game = game
+	t.working_state = root_state
 	_ = virtual.arena_init_growing(&t.arena, 8 << 20)
 	t.allocator = virtual.arena_allocator(&t.arena)
 
@@ -102,44 +116,47 @@ init :: proc(t: ^Tree, game: ^Game, root_state: rawptr, config: Config, seed: u6
 	t.rng_state = rand.create(seed if seed != 0 else 0xC0FFEE_DECADE)
 
 	// Root perspective = the player NOT to move at root, so that values get
-	// flipped correctly on the way up. Matches autogodin's convention:
-	//   player_at_parent for the root = opposite of root.current_player.
+	// flipped correctly on the way up: a value reported from side-to-move's
+	// view at the child becomes (1 - v) when looking back from the parent's.
 	cp := game.current_player(root_state)
 	root := Node {
-		parent_idx       = -1,
-		player_at_parent = 1 - cp,
-		depth            = 0,
-		state            = root_state,
+		parent_idx         = -1,
+		action_from_parent = -1,
+		player_at_parent   = 1 - cp,
+		depth              = 0,
+		is_terminal        = game.is_terminal(root_state),
 	}
+	if root.is_terminal {root.terminal_v_raw = game.terminal_value(root_state)}
 	append(&t.nodes, root)
 }
 
 destroy :: proc(t: ^Tree) {
-	// Game states that live in the tree need explicit free if the game holds
-	// outside-arena resources (e.g. its own heap maps). Walk and free.
-	if t.game != nil && t.game.free != nil {
-		for &node in t.nodes {
-			if node.state != nil {t.game.free(node.state)}
-		}
+	if t.game != nil && t.game.free != nil && t.working_state != nil {
+		t.game.free(t.working_state)
 	}
 	virtual.arena_destroy(&t.arena)
 	t^ = {}
 }
 
-// Create a child node. state ownership transfers to the tree.
+// Create a child node. The caller is responsible for having applied do_move
+// to t.working_state before this call, so we can read is_terminal /
+// terminal_value / current_player off the working state directly.
 //
 // NOTE: appending to t.nodes may reallocate; never hold a ^Node across this
 // call. The returned index stays valid.
 @(private)
-create_node :: proc(t: ^Tree, state: rawptr, parent_idx: int, player_at_parent: i32) -> int {
+create_node :: proc(t: ^Tree, parent_idx: int, action: int, player_at_parent: i32) -> int {
 	idx := len(t.nodes)
 	depth := t.nodes[parent_idx].depth + 1 if parent_idx >= 0 else 0
-	append(&t.nodes, Node {
-		parent_idx       = parent_idx,
-		player_at_parent = player_at_parent,
-		depth            = depth,
-		state            = state,
-	})
+	n := Node {
+		parent_idx         = parent_idx,
+		action_from_parent = action,
+		player_at_parent   = player_at_parent,
+		depth              = depth,
+		is_terminal        = t.game.is_terminal(t.working_state),
+	}
+	if n.is_terminal {n.terminal_v_raw = t.game.terminal_value(t.working_state)}
+	append(&t.nodes, n)
 	return idx
 }
 
@@ -151,4 +168,15 @@ use_tree_rng :: proc(t: ^Tree) {
 
 tree_size :: proc(t: ^Tree) -> int {
 	return len(t.nodes)
+}
+
+// Resolve a node's cached terminal value to the perspective of its
+// player_at_parent. Only meaningful when node.is_terminal is true.
+@(private)
+terminal_value_for_node :: proc(t: ^Tree, node_idx: int) -> f32 {
+	node := &t.nodes[node_idx]
+	cp := t.game.current_player(t.working_state)
+	v := node.terminal_v_raw
+	if cp != node.player_at_parent {v = 1.0 - v}
+	return v
 }

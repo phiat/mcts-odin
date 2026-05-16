@@ -6,6 +6,11 @@ import "core:math/rand"
 // ============================================================================
 // Single-threaded AlphaZero-style playout.
 //
+// Threads working_state through the tree: descent applies do_move, return
+// applies undo_move. Nodes never store a state copy — they store the action
+// that gets to them from their parent, and rely on the tree's working_state
+// being positioned correctly during evaluation.
+//
 // Evaluator contract:
 //   - state is the position to evaluate (do NOT mutate or free it).
 //   - out_actions / out_probs are caller-allocated, length >= game.max_actions.
@@ -59,9 +64,9 @@ select_slot_puct :: proc(t: ^Tree, node_idx: int) -> int {
 	return best_slot
 }
 
-// Expand a leaf: call the evaluator, allocate the packed slot arrays in the
-// tree arena, fill logP, mark as expanded. Returns the leaf value v_theta
-// from the side-to-move's perspective.
+// Expand a leaf: call the evaluator on t.working_state, allocate the packed
+// slot arrays in the tree arena, fill logP, mark expanded. Returns v_theta
+// from working_state's current_player perspective (caller flips if needed).
 @(private)
 expand_node :: proc(t: ^Tree, node_idx: int, evaluator: Evaluator, user_data: rawptr) -> f32 {
 	cap_n := t.game.max_actions
@@ -71,9 +76,8 @@ expand_node :: proc(t: ^Tree, node_idx: int, evaluator: Evaluator, user_data: ra
 	defer delete(p_buf, context.temp_allocator)
 
 	v: f32
-	n := evaluator(t.nodes[node_idx].state, a_buf, p_buf, &v, user_data)
+	n := evaluator(t.working_state, a_buf, p_buf, &v, user_data)
 
-	// Allocate per-node slot arrays in the tree arena (lifetimes match the tree).
 	actions := make([]int, n, t.allocator)
 	logP    := make([]f32, n, t.allocator)
 	child   := make([]int, n, t.allocator)
@@ -89,23 +93,22 @@ expand_node :: proc(t: ^Tree, node_idx: int, evaluator: Evaluator, user_data: ra
 	return v
 }
 
-// Recursive simulation. Returns U from the leaf's player_at_parent perspective.
+// Recursive simulation. Returns U from node_idx's player_at_parent perspective.
+//
+// PRECONDITION: t.working_state is positioned at node_idx's state on entry.
+// POSTCONDITION: t.working_state is restored to node_idx's state on return.
 @(private)
 perform_playout :: proc(t: ^Tree, node_idx: int, evaluator: Evaluator, user_data: rawptr) -> f32 {
-	// t.nodes may reallocate when we expand children — re-fetch fields by index, never store ^Node across calls.
 	player_perspective := t.nodes[node_idx].player_at_parent
 
 	U: f32
 
-	if t.game.is_terminal(t.nodes[node_idx].state) {
-		U = t.game.terminal_value(t.nodes[node_idx].state)
-		cp := t.game.current_player(t.nodes[node_idx].state)
-		if cp != player_perspective {U = 1.0 - U}
+	if t.nodes[node_idx].is_terminal {
+		U = terminal_value_for_node(t, node_idx)
 	} else if t.nodes[node_idx].N == 0 {
-		// First visit: expand and (optionally) rollout.
 		v_theta := expand_node(t, node_idx, evaluator, user_data)
 
-		cp := t.game.current_player(t.nodes[node_idx].state)
+		cp := t.game.current_player(t.working_state)
 		if cp != player_perspective {v_theta = 1.0 - v_theta}
 
 		t.nodes[node_idx].first_eval_value = v_theta
@@ -114,7 +117,7 @@ perform_playout :: proc(t: ^Tree, node_idx: int, evaluator: Evaluator, user_data
 		if t.config.lambda > 0 {
 			remaining := t.config.max_depth - t.nodes[node_idx].depth
 			if remaining > 0 {
-				z_L := fast_rollout(t, t.nodes[node_idx].state, player_perspective, remaining, evaluator, user_data)
+				z_L := fast_rollout(t, player_perspective, remaining, evaluator, user_data)
 				U = (1.0 - t.config.lambda) * v_theta + t.config.lambda * z_L
 			} else {
 				U = v_theta
@@ -123,21 +126,24 @@ perform_playout :: proc(t: ^Tree, node_idx: int, evaluator: Evaluator, user_data
 			U = v_theta
 		}
 	} else {
-		// Descend into the best child by PUCT.
 		slot := select_slot_puct(t, node_idx)
 		action := t.nodes[node_idx].actions[slot]
 
+		// Capture parent's current_player BEFORE applying the move so we can
+		// stamp it as the new child's player_at_parent. After do_move the
+		// working state's current_player has flipped.
+		cp_parent := t.game.current_player(t.working_state)
+		delta := t.game.do_move(t.working_state, action)
+
 		if t.nodes[node_idx].child[slot] < 0 {
-			// Lazy child expansion: clone state, apply the move, create the node.
-			new_state := t.game.clone(t.nodes[node_idx].state)
-			t.game.do_move(new_state, action)
-			cp := t.game.current_player(t.nodes[node_idx].state)
-			child_idx := create_node(t, new_state, node_idx, cp)
+			child_idx := create_node(t, node_idx, action, cp_parent)
 			t.nodes[node_idx].child[slot] = child_idx
 		}
 
 		child_idx := t.nodes[node_idx].child[slot]
 		child_value := perform_playout(t, child_idx, evaluator, user_data)
+
+		t.game.undo_move(t.working_state, delta)
 		U = 1.0 - child_value
 	}
 
@@ -146,46 +152,48 @@ perform_playout :: proc(t: ^Tree, node_idx: int, evaluator: Evaluator, user_data
 	return U
 }
 
-// Random-policy rollout used by the lambda mix. Allocates a working clone of
-// the start state, plays moves sampled from the evaluator's policy until the
-// game ends or remaining_depth is exhausted, returns the final value in
-// [0, 1] from player_perspective's view.
+// Random-policy rollout from t.working_state. Applies do_move along the way
+// and undoes ALL of them on return via the deferred unwind, so working_state
+// ends back where it started.
 @(private)
 fast_rollout :: proc(
 	t: ^Tree,
-	start_state: rawptr,
 	player_perspective: i32,
 	remaining_depth: int,
 	evaluator: Evaluator,
 	user_data: rawptr,
 ) -> f32 {
-	current := t.game.clone(start_state)
-	defer t.game.free(current)
-
 	cap_n := t.game.max_actions
 	a_buf := make([]int, cap_n, context.temp_allocator)
 	p_buf := make([]f32, cap_n, context.temp_allocator)
 	defer delete(a_buf, context.temp_allocator)
 	defer delete(p_buf, context.temp_allocator)
 
+	deltas := make([dynamic]Move_Delta, 0, remaining_depth, context.temp_allocator)
+	defer {
+		#reverse for d in deltas {t.game.undo_move(t.working_state, d)}
+		delete(deltas)
+	}
+
 	depth := 0
 	value: f32
-	for !t.game.is_terminal(current) && depth < remaining_depth {
-		n := evaluator(current, a_buf, p_buf, &value, user_data)
+	for !t.game.is_terminal(t.working_state) && depth < remaining_depth {
+		n := evaluator(t.working_state, a_buf, p_buf, &value, user_data)
 		if n == 0 {break}
 		action := sample_packed_action(a_buf[:n], p_buf[:n], t.config.rollout_temperature)
-		t.game.do_move(current, action)
+		d := t.game.do_move(t.working_state, action)
+		append(&deltas, d)
 		depth += 1
 	}
 
-	if t.game.is_terminal(current) {
-		v := t.game.terminal_value(current)
-		cp := t.game.current_player(current)
+	if t.game.is_terminal(t.working_state) {
+		v := t.game.terminal_value(t.working_state)
+		cp := t.game.current_player(t.working_state)
 		if cp != player_perspective {v = 1.0 - v}
 		return v
 	}
-	_ = evaluator(current, a_buf, p_buf, &value, user_data)
-	cp := t.game.current_player(current)
+	_ = evaluator(t.working_state, a_buf, p_buf, &value, user_data)
+	cp := t.game.current_player(t.working_state)
 	if cp != player_perspective {value = 1.0 - value}
 	return value
 }
@@ -215,7 +223,7 @@ add_dirichlet_noise :: proc(t: ^Tree, alpha, weight: f32) {
 }
 
 // Run num_simulations playouts from the root, applying PCR if configured.
-// Expands the root on first call (so logP is populated before noise is added).
+// On entry/exit, t.working_state is at the root state.
 run_simulations :: proc(t: ^Tree, num_simulations: int, evaluator: Evaluator, user_data: rawptr = nil) {
 	use_tree_rng(t)
 	n_sims := num_simulations

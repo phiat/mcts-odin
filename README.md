@@ -1,12 +1,12 @@
 # mcts-odin
 
-A generic, optimized, clean MCTS package for [Odin](https://odin-lang.org/). AlphaZero-style PUCT with Dirichlet root noise, optional fast rollouts, leaf-parallel batched playouts with virtual loss, and PCR (progressive computation reduction).
+A generic, optimized Monte Carlo Tree Search package for [Odin](https://odin-lang.org/). AlphaZero-style PUCT with Dirichlet root noise, optional fast rollouts, leaf-parallel batched playouts with virtual loss, and PCR (progressive computation reduction).
 
-Games plug in by implementing a small `Game` vtable; the core knows nothing about Go, chess, or any specific game. Ships with a Go (9×9 / 19×19) reference implementation and a tic-tac-toe sanity game.
+Games plug in by implementing a small `Game` vtable; the core knows nothing about Go, chess, or any specific game. Ships with **tic-tac-toe**, **Connect Four**, and a **Go** (9×9 / 19×19) reference implementation.
 
 ## Status
 
-v0.1-dev. Generic MCTS core + tic-tac-toe demo + 10 passing tests. Go and Connect Four demos are planned but not shipped yet. See `bd ready` for the current work queue.
+v0.1-dev. Core + three demo games + 43 passing tests under Odin's memory tracker.
 
 ## Quick start
 
@@ -14,22 +14,23 @@ v0.1-dev. Generic MCTS core + tic-tac-toe demo + 10 passing tests. Go and Connec
 package main
 
 import "mcts"
-import "games/tictactoe"
+import ttt "games/tictactoe"
 
 main :: proc() {
-    game  := tictactoe.game()           // mcts.Game vtable
-    state := tictactoe.new_state()
-    defer tictactoe.free_state(state)
+    g     := ttt.game()             // mcts.Game vtable
+    state := ttt.new_state()         // tree takes ownership
 
     cfg := mcts.default_config()
     tree: mcts.Tree
-    mcts.init(&tree, &game, state, cfg, seed = 42)
+    mcts.init(&tree, &g, state, cfg, seed = 42)
     defer mcts.destroy(&tree)
 
-    mcts.run_simulations(&tree, 1000, uniform_evaluator, nil)
+    mcts.run_simulations(&tree, 1000, my_evaluator, &g)
     action := mcts.select_action(&tree, temperature = 0.0)
 }
 ```
+
+`my_evaluator` is your value/policy function — see [`examples/tictactoe_selfplay.odin`](examples/tictactoe_selfplay.odin) for a complete runnable example.
 
 ## The Game vtable
 
@@ -40,14 +41,16 @@ Game :: struct {
     do_move:         proc(state: rawptr, action: int) -> Move_Delta,
     undo_move:       proc(state: rawptr, delta: Move_Delta),
     is_terminal:     proc(state: rawptr) -> bool,
-    terminal_value:  proc(state: rawptr) -> f32,  // [0, 1] from side-to-move perspective
+    terminal_value:  proc(state: rawptr) -> f32,  // [0, 1] from side-to-move
     legal_actions:   proc(state: rawptr, out: ^[dynamic]int),
     current_player:  proc(state: rawptr) -> i32,  // 0 or 1 for two-player games
-    max_actions:     int,                          // upper bound on action-id, for buffer sizing
+    max_actions:     int,                          // upper bound on action-id
 }
 ```
 
-Games that can't undo cheaply may leave `undo_move = nil`; MCTS falls back to clone-on-descent.
+The MCTS core uses `do_move`/`undo_move` on a single working state per tree — it never clones the state at internal nodes. This is the key performance lever: a Go-board clone (board + Zobrist history map) is several times costlier than a `do_move`/`undo_move` pair, and a deep tree creates thousands of nodes.
+
+See [`docs/EMBEDDING.md`](docs/EMBEDDING.md) for the full contract, evaluator signatures (sequential + batched), tuning knobs, and memory model.
 
 ## Layout
 
@@ -59,11 +62,13 @@ mcts/             generic MCTS core (game-agnostic)
   batched.odin      leaf-parallel run_simulations_batched (virtual loss)
   readout.odin      select_action + visit/Q/priors readouts
   rng.odin          gamma sampler + categorical helper
-games/tictactoe/  tic-tac-toe sanity game
-games/go/         (planned) Go board reference impl
+games/
+  tictactoe/        3×3 solved-game sanity demo
+  connect_four/     7×6 column-drop demo
+  go/               9×9 / 19×19 with Zobrist PSK, KataGo no-suicide, Tromp-Taylor scoring
 tests/            test suite (run with: odin test tests)
 examples/         small runnable examples
-bench/            performance benchmarks
+bench/            (planned) performance benchmarks
 scripts/          build / test helpers
 docs/             EMBEDDING.md and friends
 ```
@@ -71,11 +76,24 @@ docs/             EMBEDDING.md and friends
 ## Build
 
 ```bash
-./scripts/build.sh   # build/libmcts_odin.so
-./scripts/test.sh    # odin test tests, fails on leaks
+./scripts/build.sh           # build/libmcts_odin.so
+./scripts/test.sh            # odin test tests, fails on leaks
+odin test tests/games/connect_four
+odin test tests/games/go
+odin run examples/tictactoe_selfplay.odin -file
 ```
 
-For embedding the package in your own Odin/Python project, see [`docs/EMBEDDING.md`](docs/EMBEDDING.md).
+Optimization knobs:
+
+```bash
+ODIN_OPT="-o:speed -no-bounds-check" ./scripts/build.sh
+```
+
+## Why this exists
+
+Most MCTS implementations are tied to a specific game (chess, Go, board engines). The handful of game-agnostic ones live in Python, JAX, or C++. As of mid-2026 nothing similar exists in the Odin ecosystem — and Odin's combination of manual memory control, slice-based hot paths, and inline ASM/SIMD friendliness makes it a natural fit for the inner loop of a search.
+
+The core algorithm is a direct descendant of the MCTS in [ericjang/autogo](https://github.com/ericjang/autogo) (C++) via [autogodin](https://github.com/phiat/autogodin) (Odin port). This repo lifts the algorithm into a stand-alone, game-agnostic package.
 
 ## License
 
