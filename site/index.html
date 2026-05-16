@@ -34,7 +34,7 @@
 
         <section class="intro">
             <p>AlphaZero-style PUCT with Dirichlet root noise and First-Play Urgency. Optional fast rollouts, leaf-parallel batched playouts with virtual loss, and OS-thread parallelism. Games plug in via a small <code>Game</code> vtable — the core knows nothing about Go, chess, or any specific game.</p>
-            <p>Ships with seven demo games (tic-tac-toe, Connect Four, Reversi, Hex, Breakthrough, Gomoku, Go) and a 94-test suite that runs leak-free under Odin's memory tracker.</p>
+            <p>Ships with ten demo games (tic-tac-toe, Connect Four, Reversi, Hex, Breakthrough, Gomoku, Dots and Boxes, Amazons, Quoridor, Go) and a 124-test suite that runs leak-free under Odin's memory tracker.</p>
         </section>
 
         <section>
@@ -76,7 +76,7 @@ main :: proc() {
         </section>
 
         <section>
-            <h2>Seven demo games</h2>
+            <h2>Ten demo games</h2>
             <ul class="games">
                 <li><strong>Tic-tac-toe</strong> <span class="game-meta">3×3 · solved-game sanity</span></li>
                 <li><strong>Connect Four</strong> <span class="game-meta">7×6 · column-drop</span></li>
@@ -84,6 +84,9 @@ main :: proc() {
                 <li><strong>Hex</strong> <span class="game-meta">9×9 · hex-grid topology · BFS win</span></li>
                 <li><strong>Breakthrough</strong> <span class="game-meta">8×8 · piece movement · diagonal capture</span></li>
                 <li><strong>Gomoku</strong> <span class="game-meta">15×15 · 225-action branching factor</span></li>
+                <li><strong>Dots and Boxes</strong> <span class="game-meta">4×4 dots · extra-turn breaks to_play alternation</span></li>
+                <li><strong>Amazons</strong> <span class="game-meta">6×6 · two-stage moves (slide + arrow)</span></li>
+                <li><strong>Quoridor</strong> <span class="game-meta">5×5 · heterogeneous actions · per-candidate BFS</span></li>
                 <li><strong>Go</strong> <span class="game-meta">9×9 / 19×19 · Zobrist PSK · KataGo no-suicide · Tromp-Taylor scoring</span></li>
             </ul>
         </section>
@@ -139,7 +142,7 @@ mcts.run_simulations_threaded(&tree, 1600, n_threads = 8,
 
         <section>
             <h2>Latest release</h2>
-            <p><a href="https://github.com/phiat/mcts-odin/releases/tag/v0.4.2" class="inline-link"><strong>v0.4.2</strong></a> — three perf cleanups: flat u64 hash set for positional-superko history, xoshiro256++ tree RNG with inlined polar-Marsaglia normal sampler, batched Dirichlet sampler with precomputed Marsaglia-Tsang constants. ~108k sims/s on the 9×9 Go bench, up from ~105k at v0.4.1.</p>
+            <p><a href="https://github.com/phiat/mcts-odin/releases/tag/v0.5.0" class="inline-link"><strong>v0.5.0</strong></a> — three new demo games and a getting-started guide. Dots and Boxes (first demo where to_play doesn't flip every move), Amazons (two-stage queen-slide + arrow shot), Quoridor (heterogeneous action space + per-candidate BFS validation). Plus <a href="https://github.com/phiat/mcts-odin/blob/main/docs/GETTING_STARTED.md" class="inline-link">docs/GETTING_STARTED.md</a> — a reading-and-running onboarding path from "what does this do" to "I can wire a new game in" in under an hour.</p>
             <p><a href="https://github.com/phiat/mcts-odin/blob/main/CHANGELOG.md" class="inline-link">Full changelog →</a></p>
         </section>
 
