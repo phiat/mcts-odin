@@ -10,6 +10,7 @@ ODIN_OPT="${ODIN_OPT:--debug}"
 # Each suite is a separate Odin package, so test them individually.
 SUITES=(
 	tests
+	tests/games/breakthrough
 	tests/games/connect_four
 	tests/games/go
 	tests/games/hex

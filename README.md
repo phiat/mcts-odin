@@ -2,11 +2,11 @@
 
 A generic, optimized Monte Carlo Tree Search package for [Odin](https://odin-lang.org/). AlphaZero-style PUCT with Dirichlet root noise + FPU (First-Play Urgency), optional fast rollouts, leaf-parallel batched playouts with virtual loss, and PCR (progressive computation reduction).
 
-Games plug in by implementing a small `Game` vtable; the core knows nothing about Go, chess, or any specific game. Ships with **tic-tac-toe**, **Connect Four**, **Reversi**, **Hex**, and a **Go** (9×9 / 19×19) reference implementation.
+Games plug in by implementing a small `Game` vtable; the core knows nothing about Go, chess, or any specific game. Ships with **tic-tac-toe**, **Connect Four**, **Reversi**, **Hex**, **Breakthrough**, and a **Go** (9×9 / 19×19) reference implementation.
 
 ## Status
 
-v0.3.0 + Hex on `main`. Core + five demo games + 73 passing tests under Odin's memory tracker.
+v0.3.0 + Hex + Breakthrough on `main`. Core + six demo games + 82 passing tests under Odin's memory tracker.
 
 ### Throughput
 
@@ -141,6 +141,7 @@ games/
   connect_four/     7×6 column-drop demo
   reversi/          8×8 Reversi (Othello) with zero-alloc Move_Delta packing
   hex/              9×9 Hex with hex-grid topology and BFS win detection
+  breakthrough/     8×8 Breakthrough (Troyka 2000) — pawn movement + diagonal captures
   go/               9×9 / 19×19 with Zobrist PSK, KataGo no-suicide, Tromp-Taylor scoring
 tests/            four test suites (run with: ./scripts/test.sh)
 examples/
@@ -158,6 +159,7 @@ docs/             EMBEDDING.md (full contract) + UPSTREAM.md (sync log)
 ```bash
 ./scripts/build.sh           # build/libmcts_odin.so
 ./scripts/test.sh            # all four suites, fails on leaks
+odin test tests/games/breakthrough
 odin test tests/games/connect_four
 odin test tests/games/reversi
 odin test tests/games/hex
