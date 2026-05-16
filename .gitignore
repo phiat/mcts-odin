@@ -1,5 +1,24 @@
+# Agent / local-only files
+AGENTS.md
+CLAUDE.md
+.claude/
+.beads/
 
 # Beads / Dolt files (added by bd init)
 .dolt/
 *.db
 .beads-credential-key
+
+# Build artifacts
+build/
+*.so
+*.dylib
+*.dll
+*.a
+*.o
+
+# Odin / editor / OS
+*.bin
+.DS_Store
+.vscode/
+.idea/

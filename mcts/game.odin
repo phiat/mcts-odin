@@ -1,0 +1,65 @@
+package mcts
+
+// Game is the vtable a host game implements so the generic MCTS core can drive
+// it. State is opaque (rawptr); the core never inspects it. All procs take the
+// state pointer that MCTS is currently working with.
+//
+// Two-player zero-sum games are the primary target. current_player returns 0
+// or 1; values are reported in [0, 1] from the side-to-move's perspective and
+// flipped on the way up the tree. N-player support is a future extension and
+// will require widening current_player's range and the backup convention.
+Game :: struct {
+	// Allocate a deep copy of state. The clone must be independently mutable.
+	clone: proc(state: rawptr) -> rawptr,
+
+	// Release a state allocated by clone (or by the host's own new_state proc).
+	free: proc(state: rawptr),
+
+	// Apply action in place. Returns a Move_Delta that undo_move can consume
+	// to restore the prior state bit-for-bit. Move_Delta is opaque to MCTS —
+	// the host is free to encode whatever it needs (captured pieces, hash, etc).
+	//
+	// MCTS guarantees action was returned by a prior legal_actions call on the
+	// same state, so do_move does NOT need to re-check legality.
+	do_move: proc(state: rawptr, action: int) -> Move_Delta,
+
+	// Reverse do_move. After undo_move(delta), state must be observably
+	// identical to its value immediately before the matching do_move.
+	//
+	// May be nil — when nil, MCTS falls back to clone-on-descent (slower but
+	// works for games whose state is awkward to reverse). The build script
+	// asserts at init time that exactly one of (undo_move != nil) or
+	// (clone-on-descent mode) is selected.
+	undo_move: proc(state: rawptr, delta: Move_Delta),
+
+	// True if the position is terminal (no further moves; outcome decided).
+	is_terminal: proc(state: rawptr) -> bool,
+
+	// Outcome from the side-to-move's perspective: 1.0 = win, 0.0 = loss,
+	// 0.5 = draw. Only called when is_terminal returns true.
+	terminal_value: proc(state: rawptr) -> f32,
+
+	// Append legal action ids to `out`. MCTS owns `out` and clears it
+	// before each call; the host just appends.
+	legal_actions: proc(state: rawptr, out: ^[dynamic]int),
+
+	// 0 or 1. MCTS uses this to track perspective for value backups.
+	current_player: proc(state: rawptr) -> i32,
+
+	// Upper bound on any action id this game emits, used to size buffers.
+	// Action ids must lie in [0, max_actions); they do not need to be dense.
+	max_actions: int,
+}
+
+// Opaque delta returned by do_move. The host is the only entity that
+// interprets the bytes — MCTS just hands it back to undo_move.
+//
+// We give the host two scalar slots (suitable for hash + small flag) and a
+// pointer slot (for variable-length data like a captures stack allocated in
+// the tree arena). If your game needs more, allocate a struct and store the
+// pointer in extra.
+Move_Delta :: struct {
+	hash:  u64,
+	flags: u64,
+	extra: rawptr,
+}
