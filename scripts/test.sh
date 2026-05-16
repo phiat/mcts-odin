@@ -17,6 +17,7 @@ SUITES=(
 	tests/games/go
 	tests/games/gomoku
 	tests/games/hex
+	tests/games/quoridor
 	tests/games/reversi
 )
 
