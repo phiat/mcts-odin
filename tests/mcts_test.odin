@@ -313,6 +313,32 @@ ttt_dump_tree_json_well_formed :: proc(t: ^testing.T) {
 	testing.expect(t, contains(s, "\"nodes\":["))
 }
 
+// Regression for mcts-odin-caq: under uniform-policy evaluator + value=0.5 +
+// c_puct=1.0 + low sims, PUCT used to funnel all sims into slot 0 because
+// the q=0 default for unvisited children couldn't overcome a visited slot's
+// Q=0.5. FPU (default fpu_reduction=0.25) anchors unvisited q to parent_Q
+// minus a small reduction, restoring proper spread.
+@(test)
+ttt_fpu_spreads_visits_under_uniform_eval :: proc(t: ^testing.T) {
+	g := ttt.game()
+	state := ttt.new_state()
+	cfg := mcts.default_config() // fpu_reduction = 0.25
+	tree: mcts.Tree
+	mcts.init(&tree, &g, state, cfg, seed = 1)
+	defer mcts.destroy(&tree)
+	mcts.run_simulations(&tree, 200, uniform_evaluator, &g)
+
+	visits := mcts.get_child_visit_counts(&tree)
+	defer delete(visits)
+
+	n_slots_visited := 0
+	for _, v in visits {if v > 0 {n_slots_visited += 1}}
+	// Pre-FPU behaviour was 1 (all sims on slot 0). With FPU we expect proper
+	// spread across most of the 9 root actions.
+	testing.expectf(t, n_slots_visited >= 6,
+		"expected FPU to spread visits across >= 6 of 9 root slots, got %d", n_slots_visited)
+}
+
 @(private = "file")
 contains :: proc(haystack, needle: string) -> bool {
 	if len(needle) == 0 {return true}

@@ -46,12 +46,30 @@ select_slot_puct :: proc(t: ^Tree, node_idx: int) -> int {
 	node := &t.nodes[node_idx]
 	node_N_arr := t.node_N
 	node_Q_arr := t.node_Q
+
+	// One pass for {total_visits, sum_visited_priors}. Both feed the inner
+	// loop: sqrt_total is the standard PUCT exploration term; sum_visited
+	// drives the FPU reduction for unvisited slots.
 	total_visits := 0
+	sum_visited_priors := f32(0)
 	for k in 0 ..< len(node.actions) {
 		ci := node.child[k]
-		if ci >= 0 {total_visits += node_N_arr[ci]}
+		if ci >= 0 {
+			total_visits += node_N_arr[ci]
+			sum_visited_priors += node.priors[k]
+		}
 	}
 	sqrt_total := math.sqrt(f32(total_visits) + 1.0)
+
+	// FPU (First-Play Urgency): unvisited children get Q in the side-to-move's
+	// frame, reduced by sqrt(sum_visited_priors). This prevents the
+	// "uniform-evaluator + low sims" funneling into slot 0 (see
+	// mcts-odin-caq). node_Q is stored in player_at_parent's frame; flip to
+	// get side-to-move's expectation. parent_Q_self < 0 (would only happen
+	// pre-first-backup, which can't reach this path) is harmless — clipping
+	// to 0 isn't worth the branch.
+	parent_Q_self := 1.0 - node_Q_arr[node_idx]
+	fpu_q := parent_Q_self - t.config.fpu_reduction * math.sqrt(sum_visited_priors)
 
 	// Branchless argmax: pick winners with ternaries which Odin lowers to CMOV
 	// on x86, removing a data-dependent branch from each iteration of the tight
@@ -68,9 +86,9 @@ select_slot_puct :: proc(t: ^Tree, node_idx: int) -> int {
 		ci := node.child[k]
 		has_child := ci >= 0
 		// Index a valid node either way (root @0 always exists); mask the
-		// Q/N contributions to zero when no child is present.
+		// Q/N contributions to fpu_q / 0 when no child is present.
 		safe_ci := ci if has_child else 0
-		q := node_Q_arr[safe_ci] if has_child else 0
+		q := node_Q_arr[safe_ci] if has_child else fpu_q
 		n := node_N_arr[safe_ci] if has_child else 0
 		u := c_puct * prior * sqrt_total / (1.0 + f32(n))
 		score := q + u

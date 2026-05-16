@@ -47,12 +47,22 @@ select_slot_puct_vloss :: proc(t: ^Tree, node_idx: int) -> int {
 	node_N_arr := t.node_N
 	node_Nv_arr := t.node_N_virt
 	node_Q_arr := t.node_Q
+
 	total_visits := 0
+	sum_visited_priors := f32(0)
 	for k in 0 ..< len(node.actions) {
 		ci := node.child[k]
-		if ci >= 0 {total_visits += node_N_arr[ci] + node_Nv_arr[ci]}
+		if ci >= 0 {
+			total_visits += node_N_arr[ci] + node_Nv_arr[ci]
+			sum_visited_priors += node.priors[k]
+		}
 	}
 	sqrt_total := math.sqrt(f32(total_visits) + 1.0)
+
+	// FPU (see select_slot_puct). node_Q is in player_at_parent's frame;
+	// flip to side-to-move's expectation.
+	parent_Q_self := 1.0 - node_Q_arr[node_idx]
+	fpu_q := parent_Q_self - t.config.fpu_reduction * math.sqrt(sum_visited_priors)
 
 	// Same branchless-argmax shape as select_slot_puct: ternaries lower to CMOV,
 	// and child presence collapses to a mask so the inner loop has no
@@ -65,11 +75,14 @@ select_slot_puct_vloss :: proc(t: ^Tree, node_idx: int) -> int {
 		ci := node.child[k]
 		has_child := ci >= 0
 		safe_ci := ci if has_child else 0
-		q  := node_Q_arr[safe_ci]  if has_child else 0
+		q  := node_Q_arr[safe_ci]  if has_child else fpu_q
 		n  := node_N_arr[safe_ci]  if has_child else 0
 		nv := node_Nv_arr[safe_ci] if has_child else 0
 		n_eff := f32(n + nv)
-		q_eff := (q * f32(n)) / n_eff if n_eff > 0 else 0.0
+		// For visited slots we time-weight by N (vloss-corrected). For
+		// unvisited slots there's nothing to weight — q is already fpu_q and
+		// n_eff is 0, so q_eff = fpu_q via the n_eff>0 branch.
+		q_eff := (q * f32(n)) / n_eff if n_eff > 0 else fpu_q
 		u := c_puct * prior * sqrt_total / (1.0 + n_eff)
 		score := q_eff + u
 		is_better := score > best_score

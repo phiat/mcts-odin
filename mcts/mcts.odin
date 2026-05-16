@@ -36,6 +36,32 @@ Config :: struct {
 	max_depth:           int,  // tree + rollout combined budget
 	rollout_temperature: f32,
 
+	// First-Play Urgency (FPU) reduction. Unvisited children get Q in the
+	// side-to-move's frame:
+	//
+	//   Q_fpu = (1 - parent_Q_stored) - fpu_reduction * sqrt(sum_visited_priors)
+	//
+	// where parent_Q_stored is the parent's running Q (in player_at_parent's
+	// frame; flipped to get the side-to-move's expectation) and
+	// sum_visited_priors is the total prior weight already committed to
+	// visited slots. This anchors unvisited Q to "what the parent expects from
+	// here" — closer to parent_Q for the first few explorations, dropping as
+	// more priors get committed — so PUCT can't funnel into the first-visited
+	// slot just because Q=0 default looked catastrophically worse than Q=0.5
+	// after first eval (see mcts-odin-caq for the degeneracy this fixes).
+	//
+	// Reasonable values:
+	//   0.00 — fpu_q = parent_Q exactly. Most permissive of unvisited slots.
+	//   0.25 — KataGo non-root default (recommended; current default).
+	//   0.75 — KataGo root default if you also use Dirichlet noise there.
+	//   > 1  — strongly pessimistic about unvisited slots (rarely useful).
+	//
+	// Note: mcts-odin <= 0.1.1 used q=0 for unvisited children (the AlphaGo
+	// Zero convention). FPU=parent_Q replaces that behavior wholesale — there
+	// is no fpu_reduction value that reproduces the old q=0 default. This is
+	// a deliberate algorithm correction for v0.2.
+	fpu_reduction: f32,
+
 	pcr_sims:  []int,
 	pcr_probs: []f32,
 }
@@ -50,6 +76,7 @@ default_config :: proc() -> Config {
 		temperature         = 1.0,
 		max_depth           = 100,
 		rollout_temperature = 1.0,
+		fpu_reduction       = 0.25,
 	}
 }
 
