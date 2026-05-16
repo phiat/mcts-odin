@@ -113,7 +113,7 @@ GoBoard :: struct {
 
 	tables:       ^BoardTables, // shared per-size; not owned.
 	current_hash: u64,
-	seen_hashes:  map[u64]struct{},
+	seen_hashes:  HashSet,
 
 	// Captures stack reused across MCTS descents. do_move appends, undo_move
 	// trims back to delta.capture_start. Living on the board means the MCTS
@@ -140,12 +140,13 @@ make_go_board :: proc(size: int = 9, komi: f32 = KOMI_DEFAULT, allocator := cont
 		tables    = get_board_tables(size),
 		allocator = allocator,
 	}
+	b.seen_hashes = hash_set_make(HASH_SET_INITIAL_CAP, allocator)
 	return b
 }
 
 destroy_go_board :: proc(b: ^GoBoard) {
 	delete(b.board, b.allocator)
-	delete(b.seen_hashes)
+	hash_set_destroy(&b.seen_hashes)
 	delete(b.captures)
 	b^ = {}
 }
@@ -165,10 +166,7 @@ clone_go_board :: proc(src: ^GoBoard, allocator := context.allocator) -> GoBoard
 		current_hash       = src.current_hash,
 		allocator          = allocator,
 	}
-	dst.seen_hashes = make(map[u64]struct{}, len(src.seen_hashes))
-	for h in src.seen_hashes {
-		dst.seen_hashes[h] = {}
-	}
+	dst.seen_hashes = hash_set_clone(&src.seen_hashes, allocator)
 	return dst
 }
 
@@ -312,7 +310,7 @@ is_legal_flat :: proc(b: ^GoBoard, index: int) -> bool {
 		if b.board[nb.indices[k]] == EMPTY {has_empty = true; break}
 	}
 
-	need_psk_check := len(b.seen_hashes) > 0
+	need_psk_check := hash_set_len(&b.seen_hashes) > 0
 
 	// Fast path: empty neighbor (immediate liberty) and no PSK history. No
 	// captures need to be enumerated — the move can't be suicide and there's
@@ -376,7 +374,7 @@ is_legal_flat :: proc(b: ^GoBoard, index: int) -> bool {
 		for c in captured {
 			h ~= b.tables.zobrist[c][int(opponent)]
 		}
-		if _, ok := b.seen_hashes[h]; ok {return false}
+		if hash_set_contains(&b.seen_hashes, h) {return false}
 	}
 
 	return true
@@ -407,7 +405,7 @@ play_flat :: proc(b: ^GoBoard, index: int) -> bool {
 // is_legal_flat (on a temp clone) to detect multi-stone suicide.
 play_flat_unchecked :: proc(b: ^GoBoard, index: int) {
 	// Record the pre-move state hash in seen_hashes (for PSK on future moves).
-	b.seen_hashes[b.current_hash] = {}
+	hash_set_add(&b.seen_hashes, b.current_hash)
 
 	b.board[index] = b.to_play
 	b.current_hash ~= b.tables.zobrist[index][int(b.to_play)]
@@ -448,7 +446,7 @@ play_flat_unchecked :: proc(b: ^GoBoard, index: int) {
 }
 
 pass_move :: proc(b: ^GoBoard) -> bool {
-	b.seen_hashes[b.current_hash] = {}
+	hash_set_add(&b.seen_hashes, b.current_hash)
 	b.consecutive_passes += 1
 	b.move_count += 1
 	b.to_play = opponent_of(b.to_play)
@@ -498,10 +496,8 @@ do_move :: proc(b: ^GoBoard, action: int, captures: ^[dynamic]CaptureRecord) -> 
 	}
 
 	// Record + insert seen_hashes entry for the position BEFORE this move.
-	_, was_seen := b.seen_hashes[b.current_hash]
-	b.seen_hashes[b.current_hash] = {}
 	delta.seen_hash_added = b.current_hash
-	delta.seen_hash_was_new = !was_seen
+	delta.seen_hash_was_new = hash_set_add(&b.seen_hashes, b.current_hash)
 
 	if action == PASS_ACTION {
 		b.consecutive_passes += 1
@@ -581,7 +577,7 @@ undo_move :: proc(b: ^GoBoard, delta: MoveDelta, captures: ^[dynamic]CaptureReco
 
 	// Remove the seen_hashes entry we added, but only if it wasn't there before.
 	if delta.seen_hash_was_new {
-		delete_key(&b.seen_hashes, delta.seen_hash_added)
+		hash_set_remove(&b.seen_hashes, delta.seen_hash_added)
 	}
 }
 
@@ -659,7 +655,7 @@ set_from_array :: proc(b: ^GoBoard, data: []i8, to_play: i8) {
 			b.current_hash ~= b.tables.zobrist[i][int(b.board[i])]
 		}
 	}
-	clear(&b.seen_hashes)
+	hash_set_clear(&b.seen_hashes)
 	b.to_play = to_play
 	b.ko_point = NO_KO
 	b.consecutive_passes = 0

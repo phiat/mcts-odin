@@ -299,10 +299,7 @@ boards_equal :: proc(a, b: ^ag.GoBoard) -> bool {
 	for i in 0 ..< len(a.board) {
 		if a.board[i] != b.board[i] {return false}
 	}
-	if len(a.seen_hashes) != len(b.seen_hashes) {return false}
-	for h in a.seen_hashes {
-		if _, ok := b.seen_hashes[h]; !ok {return false}
-	}
+	if !ag.hash_set_equal(&a.seen_hashes, &b.seen_hashes) {return false}
 	return true
 }
 
