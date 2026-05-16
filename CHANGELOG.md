@@ -37,9 +37,15 @@ Initial extraction from [autogodin](https://github.com/phiat/autogodin), reshape
 - Subtree reuse across moves: `mcts.reuse_root(action)` re-roots the tree at the kept child subtree (or allocates a synthetic root if the slot was unexpanded). Depths renormalised so `max_depth` stays meaningful. Prior visit counts and Q values inform PUCT immediately on the next search round.
 - Node pool reserve: `t.nodes` capacity reserved up front at each `run_simulations` entry, avoiding the doubling-realloc chain as the tree grows.
 - Branchless PUCT scan: `select_slot_puct` / `select_slot_puct_vloss` use CMOV-friendly ternary argmax with no data-dependent control flow in the inner loop.
+- Linear-space priors on `Node.priors[k]` (renamed from `Node.logP[k]`). Drops the `math.exp` from the PUCT inner loop; Dirichlet noise mixes directly in prior space.
+
+### Bench (9×9 Go, 1600 sims/move × 32 moves, uniform evaluator, single-thread)
+
+```
+mcts-odin:  13,602 ± 87 sims/s    (1.61x autogodin cpp, 4.76x autogodin odin)
+```
 
 ### Known limitations
 
 - Single-threaded (leaf-parallelism is algorithmic only, not OS-thread parallel).
 - Bench includes only an in-process Odin evaluator; numbers vs autogodin aren't strictly apples-to-apples (theirs marshals via Python).
-- `math.exp(logP[k])` is still called every PUCT iteration. Caching the un-logged prior on the Node is a future win (tracked as a follow-up under `z24.x`).
