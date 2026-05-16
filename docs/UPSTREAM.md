@@ -42,17 +42,15 @@ These exist in mcts-odin but not autogodin. None are candidates for backport int
 
 - **`autogodin-ydh.7`: `BOARD_SIZE_HINT` comptime scaffolding** for `go_game.odin`. Adds `#config(BOARD_SIZE_HINT, 0)` and `#force_inline` `n_cells` / `board_dim` helpers that fold to compile-time constants when `BOARD_SIZE_HINT > 0`. Pure Go-board optimization — no MCTS implications. Worth porting to our `games/go/board.odin` since the demo bench is the visible perf number. Filed as a follow-up issue.
 
-## Wind-down: role flip in progress
+## Role flipped — 2026-05-16
 
-**As of 2026-05-16**, autogodin is in the process of integrating mcts-odin as a dependency and removing its own `odin/alpha_go/mcts.odin`. Their integration tracking issue is `autogodin-ydh.8` (recommended path: vendor mcts-odin as an Odin dep; keep autogodin's `go_game.odin` + C-ABI exports + Python ctypes shim; delegate Tree/Node/run_simulations to mcts-odin).
+Autogodin has removed `odin/alpha_go/mcts.odin`. The surviving `odin/alpha_go/` files (`go_adapter.odin`, `exports.odin`, `go_game.odin`, `alpha_go.odin`) only consume mcts-odin via FFI — no algorithm code remains upstream.
 
-Once that lands:
+Consequences:
 
-- The "watch for upstream MCTS drift" chore (`mcts-odin-w39.4`) becomes obsolete — there is no separate upstream MCTS to drift from. autogodin will be a consumer, not a sibling implementation.
-- This file's "Last sync" sections stop accruing.
-- The flow inverts: **autogodin files beads into this DB** for things they want from us (FFI shape, parity tests, API smoothness). See `bd memories autogodin` for the prearranged channel.
-
-Until that lands, we keep diffing — but the next sync may well be the last one of substance.
+- The "watch for upstream MCTS drift" chore (`mcts-odin-w39.4`) is closed with reason "role flipped". This file's "Last sync" sections stop accruing.
+- The flow has inverted: **autogodin files beads into this DB** for FFI shape, parity tests, downstream tuning. See `bd memories autogodin` for the channel.
+- mcts-odin is now the canonical home of the algorithm. The 2026-05-16 sync section above is the final point-in-time snapshot of the historical relationship.
 
 ## Reverse direction (post-integration)
 
