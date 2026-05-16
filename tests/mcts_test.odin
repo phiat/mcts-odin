@@ -339,6 +339,76 @@ ttt_fpu_spreads_visits_under_uniform_eval :: proc(t: ^testing.T) {
 		"expected FPU to spread visits across >= 6 of 9 root slots, got %d", n_slots_visited)
 }
 
+// `lambda` mixes a fast policy rollout into the leaf value (AlphaGo-style):
+//   U = (1 - λ) * v_theta + λ * z_rollout
+// The rollout walks the game tree from the leaf using the same evaluator's
+// policy until terminal or max_depth, then undoes every move so working_state
+// is restored. Coverage was previously zero; these tests pin the contract.
+
+@(test)
+ttt_lambda_pure_rollout_runs :: proc(t: ^testing.T) {
+	g := ttt.game()
+	state := ttt.new_state()
+	cfg := mcts.default_config()
+	cfg.lambda = 1.0
+	cfg.rollout_temperature = 1.0
+	tree: mcts.Tree
+	mcts.init(&tree, &g, state, cfg, seed = 7)
+	defer mcts.destroy(&tree)
+	mcts.run_simulations(&tree, 200, uniform_evaluator, &g)
+	testing.expect_value(t, mcts.get_root_visit_count(&tree), 200)
+
+	q := mcts.get_root_q_value(&tree)
+	testing.expectf(t, q >= 0.0 && q <= 1.0, "root Q out of bounds with lambda=1: %f", q)
+}
+
+@(test)
+ttt_lambda_mixed_runs :: proc(t: ^testing.T) {
+	g := ttt.game()
+	state := ttt.new_state()
+	cfg := mcts.default_config()
+	cfg.lambda = 0.5
+	cfg.rollout_temperature = 1.0
+	tree: mcts.Tree
+	mcts.init(&tree, &g, state, cfg, seed = 11)
+	defer mcts.destroy(&tree)
+	mcts.run_simulations(&tree, 200, uniform_evaluator, &g)
+
+	q := mcts.get_root_q_value(&tree)
+	testing.expectf(t, q >= 0.0 && q <= 1.0, "root Q out of bounds with lambda=0.5: %f", q)
+
+	// Picked action must be a legal root action — proves do_move/undo_move
+	// balanced across the lambda-mixed playouts.
+	action := mcts.select_action(&tree, 0.0)
+	testing.expectf(t, action >= 0 && action < 9, "lambda=0.5 picked illegal-shaped action %d", action)
+}
+
+@(test)
+ttt_lambda_self_play_terminates :: proc(t: ^testing.T) {
+	g := ttt.game()
+	state := ttt.new_state()
+	defer ttt.free_state(state)
+	cfg := mcts.default_config()
+	cfg.lambda = 0.5
+	cfg.rollout_temperature = 1.0
+
+	// If rollouts mis-balance do/undo, working_state corrupts and we either
+	// crash, pick illegal actions, or fail to terminate. TTT bounds the
+	// game at 9 moves; cap at 12 to leave some slack.
+	moves := 0
+	for !ttt.is_terminal(state) && moves < 12 {
+		clone := ttt.clone_state(state)
+		tree: mcts.Tree
+		mcts.init(&tree, &g, clone, cfg, seed = u64(100 + moves))
+		mcts.run_simulations(&tree, 60, uniform_evaluator, &g)
+		action := mcts.select_action(&tree, 0.0)
+		mcts.destroy(&tree)
+		_ = ttt.do_move(state, action)
+		moves += 1
+	}
+	testing.expect(t, ttt.is_terminal(state))
+}
+
 @(private = "file")
 contains :: proc(haystack, needle: string) -> bool {
 	if len(needle) == 0 {return true}
