@@ -129,7 +129,7 @@ descend_one :: proc(t: ^Tree) -> Pending_Leaf {
 		append(&deltas, delta)
 
 		if t.nodes[current].child[slot] < 0 {
-			child_idx := create_node(t, current, action, cp_parent)
+			child_idx := create_node(t, t.working_state, current, action, cp_parent)
 			t.nodes[current].child[slot] = child_idx
 			append(&path, child_idx)
 

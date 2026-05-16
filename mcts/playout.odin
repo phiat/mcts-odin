@@ -161,7 +161,7 @@ perform_playout :: proc(t: ^Tree, node_idx: int, evaluator: Evaluator, user_data
 		delta := t.game.do_move(t.working_state, action)
 
 		if t.nodes[node_idx].child[slot] < 0 {
-			child_idx := create_node(t, node_idx, action, cp_parent)
+			child_idx := create_node(t, t.working_state, node_idx, action, cp_parent)
 			t.nodes[node_idx].child[slot] = child_idx
 		}
 

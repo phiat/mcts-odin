@@ -202,3 +202,35 @@ c4_mcts_runs :: proc(t: ^testing.T) {
 	testing.expect_value(t, mcts.get_root_visit_count(&tree), 200)
 	testing.expect(t, mcts.tree_size(&tree) > 1)
 }
+
+// High-contention stress test for the threaded path. 8 workers + 1000 sims on
+// Connect Four's 7-action root + deeper tree exercises the expand mutex
+// (many leaves to create), the N/N_virt atomics (many concurrent backups),
+// and the Q CAS-loop. Verifies the invariants that races would break:
+// child visits sum to total, Q stays in [0,1], no lost or duplicated sims.
+@(test)
+c4_threaded_stress :: proc(t: ^testing.T) {
+	g := c4.game()
+	state := c4.new_state()
+	cfg := mcts.default_config()
+	tree: mcts.Tree
+	mcts.init(&tree, &g, state, cfg, seed = 31)
+	defer mcts.destroy(&tree)
+	mcts.run_simulations_threaded(&tree, 1000, 8, uniform_evaluator, &g)
+
+	testing.expect_value(t, mcts.get_root_visit_count(&tree), 1000)
+	testing.expect(t, mcts.tree_size(&tree) > 7) // grew past root + its 7 children
+
+	q := mcts.get_root_q_value(&tree)
+	testing.expectf(t, q >= 0.0 && q <= 1.0, "root Q out of [0,1] under stress: %f", q)
+
+	visits := mcts.get_child_visit_counts(&tree)
+	defer delete(visits)
+	total := 0
+	for _, v in visits {
+		testing.expect(t, v >= 0)
+		total += v
+	}
+	testing.expectf(t, total == 1000,
+		"child visits should sum to 1000 (no lost sims), got %d", total)
+}

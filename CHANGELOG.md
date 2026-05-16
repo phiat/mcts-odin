@@ -2,6 +2,29 @@
 
 All notable changes to this project will be documented here. Versions follow [SemVer](https://semver.org/) once 1.0 lands; pre-1.0 is `0.MINOR.PATCH-stage`.
 
+## [0.3.0] — 2026-05-16
+
+Minor release: OS-thread parallel MCTS lands. Additive — no existing API surface changed.
+
+### Added
+
+- **`mcts.run_simulations_threaded`** — third search driver. N OS threads each run descent / eval / backup concurrently against the same tree. Atomics on N / N_virt / Q + a coarse expand mutex around node creation keep shared state consistent; virtual loss decouples the descents. The evaluator is called concurrently from every worker, so its `user_data` must be thread-safe. Determinism is dropped (different thread interleavings → different per-node visit counts), but the total visit count is exact (atomic claim counter). Closes mcts-odin-79j.
+
+  Scaling on a slow-evaluator microbench (9×9 Go, 50 µs per call, this WSL2 box): `n=2: 1.93x`, `n=4: 3.81x`, `n=8: 7.15x` vs. sequential. Cheap-evaluator workloads (microsecond-scale) won't see this — the mutex + CAS contention matches or exceeds the work.
+
+- **`bench/threaded/`** — standalone scaling bench for `run_simulations_threaded` with a configurable per-call spin to model NN evaluator latency. Build: `odin run bench/threaded -o:speed -no-bounds-check`.
+
+- **Test coverage**: 4 new tests — `ttt_threaded_one_worker_runs`, `ttt_threaded_multi_worker_total_visits`, `ttt_threaded_self_play_terminates`, `c4_threaded_stress` (8 workers × 1000 sims on Connect Four, validates child-visit sum and Q-bounds under contention). Suite count 60 → 64.
+
+### Changed (internal)
+
+- **`create_node` now takes the working state as an argument** rather than reading `t.working_state` directly. Sequential and batched callers pass `t.working_state` (no behaviour change); threaded callers pass their per-worker clone. Private internal — not part of the stable surface.
+
+### Docs
+
+- README "Sequential vs batched" section becomes "Sequential, batched, threaded" with the third driver documented inline.
+- `docs/EMBEDDING.md §9` (Threading) rewritten from "not yet" into a usage section covering the evaluator-thread-safety contract, the cheap-vs-expensive evaluator tradeoff, the dropped-determinism caveat, and the measured scaling numbers.
+
 ## [0.2.1] — 2026-05-16
 
 A patch release: one new demo game, one bench bug fix, one documentation example. No stable-surface changes.

@@ -238,24 +238,27 @@ destroy :: proc(t: ^Tree) {
 }
 
 // Create a child node. The caller is responsible for having applied do_move
-// to t.working_state before this call, so we can read is_terminal /
-// terminal_value / current_player off the working state directly.
+// to `state` before this call so is_terminal / terminal_value / current_player
+// can be read off it directly. `state` is t.working_state for the
+// single-threaded paths; for run_simulations_threaded each worker passes its
+// own per-worker clone instead.
 //
 // NOTE: appending to t.nodes may reallocate; never hold a ^Node across this
-// call. The returned index stays valid.
+// call. The returned index stays valid. Threaded callers must hold the
+// expand mutex — t.nodes and the SoA hot arrays are not multi-writer safe.
 @(private)
-create_node :: proc(t: ^Tree, parent_idx: int, action: int, player_at_parent: i32) -> int {
+create_node :: proc(t: ^Tree, state: rawptr, parent_idx: int, action: int, player_at_parent: i32) -> int {
 	idx := len(t.nodes)
 	depth := t.nodes[parent_idx].depth + 1 if parent_idx >= 0 else 0
 	n := Node {
 		parent_idx         = parent_idx,
 		action_from_parent = action,
 		player_at_parent   = player_at_parent,
-		cp_at_node         = t.game.current_player(t.working_state),
+		cp_at_node         = t.game.current_player(state),
 		depth              = depth,
-		is_terminal        = t.game.is_terminal(t.working_state),
+		is_terminal        = t.game.is_terminal(state),
 	}
-	if n.is_terminal {n.terminal_v_raw = t.game.terminal_value(t.working_state)}
+	if n.is_terminal {n.terminal_v_raw = t.game.terminal_value(state)}
 	append(&t.nodes, n)
 	append(&t.node_N, 0)
 	append(&t.node_N_virt, 0)

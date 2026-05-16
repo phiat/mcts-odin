@@ -409,6 +409,74 @@ ttt_lambda_self_play_terminates :: proc(t: ^testing.T) {
 	testing.expect(t, ttt.is_terminal(state))
 }
 
+// run_simulations_threaded — OS-thread parallel MCTS with virtual loss and
+// atomic backups. Workers share the same Tree; descents are decoupled by
+// virtual loss; backups commit through atomics. Determinism is dropped — the
+// visit count is exact (atomic counter), but per-node visits/Q vary across
+// runs.
+
+@(test)
+ttt_threaded_one_worker_runs :: proc(t: ^testing.T) {
+	g := ttt.game()
+	state := ttt.new_state()
+	cfg := mcts.default_config()
+	tree: mcts.Tree
+	mcts.init(&tree, &g, state, cfg, seed = 19)
+	defer mcts.destroy(&tree)
+	mcts.run_simulations_threaded(&tree, 100, 1, uniform_evaluator, &g)
+	testing.expect_value(t, mcts.get_root_visit_count(&tree), 100)
+}
+
+@(test)
+ttt_threaded_multi_worker_total_visits :: proc(t: ^testing.T) {
+	// 4 workers, 200 sims total. Atomic claim counter must yield exactly 200
+	// completed sims — no double-count, no lost sim.
+	g := ttt.game()
+	state := ttt.new_state()
+	cfg := mcts.default_config()
+	tree: mcts.Tree
+	mcts.init(&tree, &g, state, cfg, seed = 23)
+	defer mcts.destroy(&tree)
+	mcts.run_simulations_threaded(&tree, 200, 4, uniform_evaluator, &g)
+	testing.expect_value(t, mcts.get_root_visit_count(&tree), 200)
+
+	// Q must be in [0,1] — corrupted CAS loop would let it drift out.
+	q := mcts.get_root_q_value(&tree)
+	testing.expectf(t, q >= 0.0 && q <= 1.0, "root Q out of bounds: %f", q)
+
+	// Sum of child visits must equal parent visits (minus the root self-visit
+	// pattern: every sim that descends past root bumps root, then a child).
+	visits := mcts.get_child_visit_counts(&tree)
+	defer delete(visits)
+	total_child := 0
+	for _, v in visits {total_child += v}
+	testing.expectf(t, total_child == 200,
+		"child visits should sum to 200, got %d (lost/duplicated sims)", total_child)
+}
+
+@(test)
+ttt_threaded_self_play_terminates :: proc(t: ^testing.T) {
+	// End-to-end smoke: a TTT game using the threaded path for every move
+	// completes without crashes, picks legal actions, and terminates.
+	g := ttt.game()
+	state := ttt.new_state()
+	defer ttt.free_state(state)
+	cfg := mcts.default_config()
+
+	moves := 0
+	for !ttt.is_terminal(state) && moves < 12 {
+		clone := ttt.clone_state(state)
+		tree: mcts.Tree
+		mcts.init(&tree, &g, clone, cfg, seed = u64(200 + moves))
+		mcts.run_simulations_threaded(&tree, 100, 4, uniform_evaluator, &g)
+		action := mcts.select_action(&tree, 0.0)
+		mcts.destroy(&tree)
+		_ = ttt.do_move(state, action)
+		moves += 1
+	}
+	testing.expect(t, ttt.is_terminal(state))
+}
+
 // PCR (progressive computation reduction): if cfg.pcr_sims is set, the per-
 // call sim count is sampled from pcr_sims weighted by pcr_probs — the
 // caller's `num_simulations` argument is overridden. Surprising behaviour

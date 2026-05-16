@@ -187,7 +187,21 @@ Both helpers are marked experimental — the field set may change before 1.0. No
 
 ## 9. Threading
 
-Not yet. The current MCTS is single-threaded; leaf-parallelism is *algorithmic* (one tree, batched evaluator), not OS-thread parallelism. True root-parallel or tree-parallel MCTS is a future extension.
+```odin
+// N OS threads each run descent / eval / backup concurrently against the
+// same Tree. Atomics on N / N_virt / Q + a coarse expand mutex around node
+// creation keep shared state consistent. Virtual loss decouples the
+// descents so workers don't pile onto the same leaf.
+mcts.run_simulations_threaded(&tree, num_sims, n_threads, my_evaluator, my_user_data)
+```
+
+The evaluator is called concurrently from every worker. Anything it touches via `user_data` must be thread-safe — most NN evaluators serialise on the model / GPU boundary, but if yours doesn't you'll need a lock there.
+
+**When to use it:** evaluators that take real time per call (≥10 µs of CPU work or a GPU forward pass). On microsecond-scale evaluators the lock + CAS contention can match or exceed the work, so the speedup degrades. Measured scaling on a slow-evaluator bench (9×9 Go, 50 µs per call): `n=2: 1.93x`, `n=4: 3.81x`, `n=8: 7.15x` vs. sequential.
+
+**Determinism:** dropped. Different thread interleavings produce different per-node visit counts and Q values even with the same seed. The total visit count is exact (atomic claim counter), so `get_root_visit_count` is reliable across runs. Use the sequential or batched paths if you need reproducible play.
+
+Root expansion + Dirichlet noise happen as a single-threaded prelude before the workers spawn, so the workers all enter with a fully-initialised root. Workers each clone `t.working_state` and operate on their own copy — `t.working_state` is left at the root for the duration of the threaded call.
 
 ## 10. API stability
 
@@ -205,7 +219,7 @@ These are the API shapes we don't intend to break on `0.x` patch/minor bumps. We
 | `mcts.Evaluator`, `mcts.Evaluator_Batched` | Proc signatures. |
 | `mcts.Config` | Struct & field names. Defaults from `default_config()` may shift. |
 | `mcts.init`, `mcts.destroy` | Primary lifecycle. |
-| `mcts.run_simulations`, `mcts.run_simulations_batched` | The two main search drivers. |
+| `mcts.run_simulations`, `mcts.run_simulations_batched`, `mcts.run_simulations_threaded` | The three search drivers — sequential, leaf-parallel batched, OS-thread parallel. |
 | `mcts.reuse_root` | Subtree reuse contract documented in §5. |
 | `mcts.select_action`, `mcts.get_action_probabilities` | Move-selection readouts. |
 | `mcts.tree_size`, `mcts.get_root_visit_count`, `mcts.get_root_q_value` | Cheap diagnostics. |

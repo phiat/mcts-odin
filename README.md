@@ -6,7 +6,7 @@ Games plug in by implementing a small `Game` vtable; the core knows nothing abou
 
 ## Status
 
-v0.2.1. Core + four demo games + 60 passing tests under Odin's memory tracker.
+v0.3.0. Core + four demo games + 64 passing tests under Odin's memory tracker.
 
 ### Throughput
 
@@ -75,7 +75,7 @@ Three deliberate choices drive the throughput:
 - **Packed slot storage.** Per-node `actions[k] / priors[k] / child[k]` are tightly packed slices, sized at first expansion. Hot fields (`N`, `N_virt`, `Q`) live in parallel arrays on the `Tree`, indexed by node index — the PUCT inner loop reads ~12 bytes per child rather than chasing a full Node struct on every random-access probe.
 - **Two arenas per tree.** A growing arena owns nodes and slot arrays for the lifetime of the tree; a separate scratch arena is `free_all`-reset at the top of every `run_simulations` call. The caller's `context.temp_allocator` is never touched.
 
-## Sequential vs batched
+## Sequential, batched, threaded
 
 ```odin
 // Sequential — one evaluator call per leaf. Fine for CPU-side policies,
@@ -87,7 +87,20 @@ mcts.run_simulations(&tree, 1600, my_evaluator, &g)
 // (e.g. a GPU NN forward pass) and benefits from large batch sizes.
 mcts.run_simulations_batched(&tree, 1600, batch_size = 16,
                               my_batched_evaluator, &g)
+
+// OS-thread parallel — N worker threads each run descent / eval / backup
+// concurrently. Atomics on N / N_virt / Q + a coarse expand mutex keep the
+// shared tree consistent; virtual loss decouples the descents. The supplied
+// evaluator is called concurrently from every worker, so its user_data must
+// be thread-safe. Determinism is dropped — repeated runs with the same seed
+// produce different node visit counts.
+mcts.run_simulations_threaded(&tree, 1600, n_threads = 8, my_evaluator, &g)
 ```
+
+Near-linear scaling on slow evaluators (50 µs/call benchmark, 9×9 Go):
+`n=2: 1.93x`, `n=4: 3.81x`, `n=8: 7.15x`. For cheap evaluators (uniform-policy,
+microseconds per call) the mutex and CAS-loop contention can erase the
+speedup — use the sequential or batched paths there.
 
 The two paths share the same tree, the same Game vtable, and the same readouts (`select_action`, visit counts, Q values, priors).
 
