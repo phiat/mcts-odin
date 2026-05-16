@@ -84,6 +84,12 @@ GoBoard :: struct {
 	current_hash: u64,
 	seen_hashes:  map[u64]struct{},
 
+	// Captures stack reused across MCTS descents. do_move appends, undo_move
+	// trims back to delta.capture_start. Living on the board means the MCTS
+	// adapter doesn't allocate a fresh dynamic per move (was 2 heap allocs/move,
+	// now 1 — just the Adapter_Delta itself).
+	captures: [dynamic]CaptureRecord,
+
 	allocator:    runtime.Allocator,
 }
 
@@ -105,6 +111,7 @@ make_go_board :: proc(size: int = 9, komi: f32 = KOMI_DEFAULT, allocator := cont
 destroy_go_board :: proc(b: ^GoBoard) {
 	delete(b.board, b.allocator)
 	delete(b.seen_hashes)
+	delete(b.captures)
 	b^ = {}
 }
 

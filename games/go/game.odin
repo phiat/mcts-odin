@@ -10,20 +10,18 @@ package go_game
 //
 // Players: BLACK -> 0, WHITE -> 1 (MCTS convention).
 //
-// Move_Delta packing: do_move allocates a fresh ^Adapter_Delta (struct holding
-// the board-level MoveDelta plus a small captures slice) on context.allocator,
-// stashes the pointer in Move_Delta.extra, and undo_move reads it back. Both
-// allocations are released by undo_move. When MCTS runs in clone-on-descent
-// mode (its default), it discards the Move_Delta — the allocation is leaked,
-// which is acceptable for now since clone-on-descent already implies fresh
-// per-node state.
+// Move_Delta packing: do_move allocates a single Adapter_Delta carrying the
+// board-level MoveDelta, stashes the pointer in Move_Delta.extra, and undo_move
+// frees it. Captures live on the GoBoard's own reusable stack
+// (b.captures); the delta indexes into it via capture_start/capture_count, so
+// the adapter is one heap alloc per move, not two.
 
 import "../../mcts"
 
-// Bundle that lives behind Move_Delta.extra. Owns its captures buffer.
+// Bundle that lives behind Move_Delta.extra. Captures index into b.captures —
+// no per-move dynamic array allocation here.
 Adapter_Delta :: struct {
-	delta:    MoveDelta,
-	captures: [dynamic]CaptureRecord,
+	delta: MoveDelta,
 }
 
 new_state :: proc(size: int = 9, komi: f32 = KOMI_DEFAULT, allocator := context.allocator) -> rawptr {
@@ -94,8 +92,7 @@ mcts_do_move :: proc(state: rawptr, action: int) -> mcts.Move_Delta {
 	internal_action := PASS_ACTION if action == b.size * b.size else action
 
 	ad := new(Adapter_Delta)
-	ad.captures = make([dynamic]CaptureRecord, 0, 4)
-	ad.delta = do_move(b, internal_action, &ad.captures)
+	ad.delta = do_move(b, internal_action, &b.captures)
 	return mcts.Move_Delta {
 		hash  = ad.delta.prev_current_hash,
 		flags = 0,
@@ -107,8 +104,7 @@ mcts_undo_move :: proc(state: rawptr, delta: mcts.Move_Delta) {
 	if delta.extra == nil {return}
 	b := cast(^GoBoard)state
 	ad := cast(^Adapter_Delta)delta.extra
-	undo_move(b, ad.delta, &ad.captures)
-	delete(ad.captures)
+	undo_move(b, ad.delta, &b.captures)
 	free(ad)
 }
 
