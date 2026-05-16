@@ -73,30 +73,59 @@ get_action_probabilities :: proc(
 // Sample an action from the visit-count distribution. temperature == 0 is
 // deterministic argmax; temperature > 0 samples categorically.
 //
+// Iterates the root's packed slot list (deterministic order) rather than the
+// map returned by get_action_probabilities — map iteration order is undefined
+// in Odin, which would silently make the sampled action non-reproducible even
+// with a fixed seed.
+//
 // API stability: stable.
 select_action :: proc(t: ^Tree, temperature: f32 = 1.0) -> int {
 	use_tree_rng(t)
-	probs := get_action_probabilities(t, temperature)
-	defer delete(probs)
+	root := &t.nodes[t.root_idx]
+	n := len(root.actions)
+	if n == 0 {return -1}
 
 	if temperature == 0 {
-		best_action := -1
-		best_p := f32(-1)
-		for action, p in probs {
-			if p > best_p {best_p = p; best_action = action}
+		best_slot := 0
+		best_visits := -1
+		for k in 0 ..< n {
+			ci := root.child[k]
+			v := 0 if ci < 0 else t.node_N[ci]
+			if v > best_visits {best_visits = v; best_slot = k}
 		}
-		return best_action
+		return root.actions[best_slot]
+	}
+
+	any_child := false
+	for k in 0 ..< n {
+		if root.child[k] >= 0 {any_child = true; break}
+	}
+	if !any_child {
+		return root.actions[int(rand.float32() * f32(n))]
+	}
+
+	work := make([]f32, n, t.scratch_allocator)
+	defer delete(work, t.scratch_allocator)
+
+	total := f32(0)
+	for k in 0 ..< n {
+		ci := root.child[k]
+		visits := 0 if ci < 0 else t.node_N[ci]
+		v := math.pow(f32(visits), 1.0 / temperature)
+		work[k] = v
+		total += v
+	}
+	if total == 0 {
+		return root.actions[int(rand.float32() * f32(n))]
 	}
 
 	r := rand.float32()
 	cum := f32(0)
-	last_action := -1
-	for action, p in probs {
-		last_action = action
-		cum += p
-		if r < cum {return action}
+	for k in 0 ..< n {
+		cum += work[k] / total
+		if r < cum {return root.actions[k]}
 	}
-	return last_action
+	return root.actions[n - 1]
 }
 
 // API stability: stable.
@@ -165,7 +194,7 @@ get_root_policy_priors :: proc(t: ^Tree, allocator := context.allocator) -> map[
 get_child_max_subtree_depths :: proc(t: ^Tree, allocator := context.allocator) -> map[int]int {
 	root := &t.nodes[t.root_idx]
 	out := make(map[int]int, len(root.actions), allocator)
-	stack := make([dynamic]int, 0, 64, context.temp_allocator)
+	stack := make([dynamic]int, 0, 64, t.scratch_allocator)
 	defer delete(stack)
 	for k in 0 ..< len(root.actions) {
 		ci := root.child[k]
