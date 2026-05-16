@@ -86,6 +86,17 @@ Tree :: struct {
 	game:      ^Game,
 	rng_state: rand.Default_Random_State,
 
+	// Index of the current root within `nodes`. Always 0 immediately after
+	// init; can move when reuse_root is called between moves. Old root +
+	// sibling subtrees stay allocated in the arena (memory reclaimed at
+	// destroy). All public readouts and run_simulations entries operate
+	// relative to root_idx.
+	root_idx:    int,
+	// True once Dirichlet noise has been mixed into the current root's
+	// logP for this search round. Cleared by reuse_root so the next
+	// run_simulations call re-applies noise to the new root.
+	root_noised: bool,
+
 	// The tree's single working state. Owned by the tree, freed via game.free
 	// in destroy(). Mutated in-place during descents and restored at the end
 	// of each simulation so it always equals the root state between sims.
@@ -197,4 +208,69 @@ terminal_value_for_node :: proc(t: ^Tree, node_idx: int) -> f32 {
 	v := node.terminal_v_raw
 	if cp != node.player_at_parent {v = 1.0 - v}
 	return v
+}
+
+// Re-root the tree at the child reached by `action` from the current root.
+// Applies game.do_move(working_state, action) so working_state is positioned
+// at the new root. Subtree depths are renormalised so the new root's depth
+// is 0 (preserving the max_depth budget used by fast_rollout).
+//
+// If the action's slot was previously expanded, that subtree is kept; the
+// old root and sibling subtrees become unreachable but stay in the arena
+// (memory reclaimed at destroy()). If the action was unexplored or matches
+// no slot, a fresh root node is allocated at the post-move position.
+//
+// Returns true if an existing subtree was reused, false on a synthetic root.
+reuse_root :: proc(t: ^Tree, action: int) -> bool {
+	root := &t.nodes[t.root_idx]
+	reused_idx := -1
+	for k in 0 ..< len(root.actions) {
+		if root.actions[k] == action {
+			reused_idx = root.child[k]
+			break
+		}
+	}
+
+	t.game.do_move(t.working_state, action)
+	t.root_noised = false
+
+	if reused_idx < 0 {
+		// Brand-new root for the post-move position; perspective = opposite
+		// of side-to-move, matching init's convention.
+		idx := len(t.nodes)
+		cp := t.game.current_player(t.working_state)
+		n := Node {
+			parent_idx         = -1,
+			action_from_parent = -1,
+			player_at_parent   = 1 - cp,
+			depth              = 0,
+			is_terminal        = t.game.is_terminal(t.working_state),
+		}
+		if n.is_terminal {n.terminal_v_raw = t.game.terminal_value(t.working_state)}
+		append(&t.nodes, n)
+		t.root_idx = idx
+		return false
+	}
+
+	// Renormalise subtree depths: subtract reused root's old depth from every
+	// reachable node so the new root sits at depth 0.
+	offset := t.nodes[reused_idx].depth
+	if offset > 0 {
+		stack := make([dynamic]int, 0, 64, t.scratch_allocator)
+		defer delete(stack)
+		append(&stack, reused_idx)
+		for len(stack) > 0 {
+			cur := pop(&stack)
+			t.nodes[cur].depth -= offset
+			for k in 0 ..< len(t.nodes[cur].actions) {
+				ci := t.nodes[cur].child[k]
+				if ci >= 0 {append(&stack, ci)}
+			}
+		}
+	}
+
+	t.nodes[reused_idx].parent_idx = -1
+	t.nodes[reused_idx].action_from_parent = -1
+	t.root_idx = reused_idx
+	return true
 }

@@ -188,6 +188,62 @@ ttt_batched_smoke :: proc(t: ^testing.T) {
 // signal), but we DO require sane behaviour: actions are legal, Q values are
 // reasonable, no crashes.
 @(test)
+ttt_reuse_root_with_existing_subtree :: proc(t: ^testing.T) {
+	// Build a tree, pick an action, reuse the subtree under it, run more sims.
+	g := ttt.game()
+	state := ttt.new_state()
+	cfg := mcts.default_config()
+	tree: mcts.Tree
+	mcts.init(&tree, &g, state, cfg, seed = 7)
+	defer mcts.destroy(&tree)
+
+	mcts.run_simulations(&tree, 200, uniform_evaluator, &g)
+	action := mcts.select_action(&tree, 0.0)
+	visits_before := mcts.get_child_visit_counts(&tree)
+	defer delete(visits_before)
+
+	// The kept slot's visit count becomes the new root's existing N.
+	prior_visits := visits_before[action]
+	testing.expect(t, prior_visits > 0)
+
+	reused := mcts.reuse_root(&tree, action)
+	testing.expect(t, reused)
+
+	mcts.run_simulations(&tree, 100, uniform_evaluator, &g)
+	testing.expect(t, mcts.get_root_visit_count(&tree) >= prior_visits + 100)
+}
+
+@(test)
+ttt_reuse_root_synthetic :: proc(t: ^testing.T) {
+	// Calling reuse_root for an action that wasn't expanded should still work,
+	// just by allocating a fresh root.
+	g := ttt.game()
+	state := ttt.new_state()
+	cfg := mcts.default_config()
+	tree: mcts.Tree
+	mcts.init(&tree, &g, state, cfg, seed = 11)
+	defer mcts.destroy(&tree)
+
+	// 1 sim: only one slot at root gets a child; the other 8 remain unexplored.
+	mcts.run_simulations(&tree, 1, uniform_evaluator, &g)
+
+	visits := mcts.get_child_visit_counts(&tree)
+	defer delete(visits)
+	unexplored_action := -1
+	for a in 0 ..< 9 {
+		if _, ok := visits[a]; !ok {unexplored_action = a; break}
+	}
+	testing.expect(t, unexplored_action >= 0)
+
+	reused := mcts.reuse_root(&tree, unexplored_action)
+	testing.expect(t, !reused)
+	testing.expect_value(t, mcts.get_root_visit_count(&tree), 0)
+
+	mcts.run_simulations(&tree, 50, uniform_evaluator, &g)
+	testing.expect_value(t, mcts.get_root_visit_count(&tree), 50)
+}
+
+@(test)
 ttt_self_play_runs_to_completion :: proc(t: ^testing.T) {
 	g := ttt.game()
 	state := ttt.new_state()

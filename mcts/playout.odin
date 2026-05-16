@@ -50,23 +50,28 @@ select_slot_puct :: proc(t: ^Tree, node_idx: int) -> int {
 	}
 	sqrt_total := math.sqrt(f32(total_visits) + 1.0)
 
+	// Branchless argmax: pick winners with ternaries which Odin lowers to CMOV
+	// on x86, removing a data-dependent branch from each iteration of the tight
+	// inner loop. Likewise, fold the ci>=0 child-presence check into a single
+	// mask so the body has no control flow at all.
 	best_slot := 0
 	best_score := f32(min(f32))
+	c_puct := t.config.c_puct
 	for k in 0 ..< len(node.actions) {
 		prior := math.exp(node.logP[k])
-		q := f32(0)
-		n := 0
 		ci := node.child[k]
-		if ci >= 0 {
-			q = t.nodes[ci].Q
-			n = t.nodes[ci].N
-		}
-		u := t.config.c_puct * prior * sqrt_total / (1.0 + f32(n))
+		has_child := ci >= 0
+		// Index a valid node either way (root @0 always exists); mask the
+		// Q/N contributions to zero when no child is present.
+		safe_ci := ci if has_child else 0
+		child := &t.nodes[safe_ci]
+		q := child.Q if has_child else 0
+		n := child.N if has_child else 0
+		u := c_puct * prior * sqrt_total / (1.0 + f32(n))
 		score := q + u
-		if score > best_score {
-			best_score = score
-			best_slot = k
-		}
+		is_better := score > best_score
+		best_score = score if is_better else best_score
+		best_slot  = k     if is_better else best_slot
 	}
 	return best_slot
 }
@@ -196,7 +201,7 @@ fast_rollout :: proc(
 // alpha and weight come from t.config. No-op if root has no slots yet.
 @(private)
 add_dirichlet_noise :: proc(t: ^Tree, alpha, weight: f32) {
-	root := &t.nodes[0]
+	root := &t.nodes[t.root_idx]
 	n := len(root.actions)
 	if n == 0 {return}
 
@@ -233,14 +238,15 @@ run_simulations :: proc(t: ^Tree, num_simulations: int, evaluator: Evaluator, us
 		n_sims = t.config.pcr_sims[pick]
 	}
 
-	if !t.nodes[0].expanded {
-		_ = expand_node(t, 0, evaluator, user_data)
-		if t.config.dirichlet_alpha > 0 {
-			add_dirichlet_noise(t, t.config.dirichlet_alpha, t.config.dirichlet_weight)
-		}
+	if !t.nodes[t.root_idx].expanded && !t.nodes[t.root_idx].is_terminal {
+		_ = expand_node(t, t.root_idx, evaluator, user_data)
+	}
+	if !t.root_noised && t.config.dirichlet_alpha > 0 {
+		add_dirichlet_noise(t, t.config.dirichlet_alpha, t.config.dirichlet_weight)
+		t.root_noised = true
 	}
 
 	for _ in 0 ..< n_sims {
-		perform_playout(t, 0, evaluator, user_data)
+		perform_playout(t, t.root_idx, evaluator, user_data)
 	}
 }

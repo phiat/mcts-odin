@@ -50,22 +50,28 @@ select_slot_puct_vloss :: proc(t: ^Tree, node_idx: int) -> int {
 	}
 	sqrt_total := math.sqrt(f32(total_visits) + 1.0)
 
+	// Same branchless-argmax shape as select_slot_puct: ternaries lower to CMOV,
+	// and child presence collapses to a mask so the inner loop has no
+	// data-dependent control flow.
 	best_slot := 0
 	best_score := f32(min(f32))
+	c_puct := t.config.c_puct
 	for k in 0 ..< len(node.actions) {
 		prior := math.exp(node.logP[k])
-		q := f32(0); n := 0; nv := 0
 		ci := node.child[k]
-		if ci >= 0 {
-			q = t.nodes[ci].Q
-			n = t.nodes[ci].N
-			nv = t.nodes[ci].N_virt
-		}
+		has_child := ci >= 0
+		safe_ci := ci if has_child else 0
+		child := &t.nodes[safe_ci]
+		q  := child.Q      if has_child else 0
+		n  := child.N      if has_child else 0
+		nv := child.N_virt if has_child else 0
 		n_eff := f32(n + nv)
 		q_eff := (q * f32(n)) / n_eff if n_eff > 0 else 0.0
-		u := t.config.c_puct * prior * sqrt_total / (1.0 + n_eff)
+		u := c_puct * prior * sqrt_total / (1.0 + n_eff)
 		score := q_eff + u
-		if score > best_score {best_score = score; best_slot = k}
+		is_better := score > best_score
+		best_score = score if is_better else best_score
+		best_slot  = k     if is_better else best_slot
 	}
 	return best_slot
 }
@@ -81,8 +87,8 @@ descend_one :: proc(t: ^Tree) -> Pending_Leaf {
 	path := make([dynamic]int, 0, 8, t.scratch_allocator)
 	deltas := make([dynamic]Move_Delta, 0, 8, t.scratch_allocator)
 
-	append(&path, 0)
-	current := 0
+	append(&path, t.root_idx)
+	current := t.root_idx
 
 	pl := Pending_Leaf{eval_slot = -1, leaf_idx = -1}
 
@@ -163,7 +169,7 @@ run_simulations_batched :: proc(
 	cap_n := t.game.max_actions
 
 	// Expand the root via a 1-state batch call so the API stays single-callback.
-	if !t.nodes[0].expanded && !t.nodes[0].is_terminal {
+	if !t.nodes[t.root_idx].expanded && !t.nodes[t.root_idx].is_terminal {
 		states := []rawptr{t.working_state}
 		a_views := [][]int{t.eval_a_buf}
 		p_views := [][]f32{t.eval_p_buf}
@@ -179,14 +185,14 @@ run_simulations_batched :: proc(
 			logP[k]    = log_safe(t.eval_p_buf[k])
 			child[k]   = -1
 		}
-		t.nodes[0].actions = actions
-		t.nodes[0].logP    = logP
-		t.nodes[0].child   = child
-		t.nodes[0].expanded = true
-
-		if t.config.dirichlet_alpha > 0 {
-			add_dirichlet_noise(t, t.config.dirichlet_alpha, t.config.dirichlet_weight)
-		}
+		t.nodes[t.root_idx].actions = actions
+		t.nodes[t.root_idx].logP    = logP
+		t.nodes[t.root_idx].child   = child
+		t.nodes[t.root_idx].expanded = true
+	}
+	if !t.root_noised && t.config.dirichlet_alpha > 0 {
+		add_dirichlet_noise(t, t.config.dirichlet_alpha, t.config.dirichlet_weight)
+		t.root_noised = true
 	}
 
 	completed := 0

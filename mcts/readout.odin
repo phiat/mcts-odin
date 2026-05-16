@@ -20,7 +20,7 @@ get_action_probabilities :: proc(
 	temperature: f32 = 1.0,
 	allocator := context.allocator,
 ) -> map[int]f32 {
-	root := &t.nodes[0]
+	root := &t.nodes[t.root_idx]
 	n := len(root.actions)
 
 	out := make(map[int]f32, n, allocator)
@@ -95,15 +95,15 @@ select_action :: proc(t: ^Tree, temperature: f32 = 1.0) -> int {
 }
 
 get_root_visit_count :: proc(t: ^Tree) -> int {
-	return t.nodes[0].N
+	return t.nodes[t.root_idx].N
 }
 
 get_root_q_value :: proc(t: ^Tree) -> f32 {
-	return t.nodes[0].Q
+	return t.nodes[t.root_idx].Q
 }
 
 get_child_visit_counts :: proc(t: ^Tree, allocator := context.allocator) -> map[int]int {
-	root := &t.nodes[0]
+	root := &t.nodes[t.root_idx]
 	out := make(map[int]int, len(root.actions), allocator)
 	for k in 0 ..< len(root.actions) {
 		ci := root.child[k]
@@ -113,7 +113,7 @@ get_child_visit_counts :: proc(t: ^Tree, allocator := context.allocator) -> map[
 }
 
 get_child_q_values :: proc(t: ^Tree, allocator := context.allocator) -> map[int]f32 {
-	root := &t.nodes[0]
+	root := &t.nodes[t.root_idx]
 	out := make(map[int]f32, len(root.actions), allocator)
 	for k in 0 ..< len(root.actions) {
 		ci := root.child[k]
@@ -123,7 +123,7 @@ get_child_q_values :: proc(t: ^Tree, allocator := context.allocator) -> map[int]
 }
 
 get_child_first_eval_values :: proc(t: ^Tree, allocator := context.allocator) -> map[int]f32 {
-	root := &t.nodes[0]
+	root := &t.nodes[t.root_idx]
 	out := make(map[int]f32, len(root.actions), allocator)
 	for k in 0 ..< len(root.actions) {
 		ci := root.child[k]
@@ -136,7 +136,7 @@ get_child_first_eval_values :: proc(t: ^Tree, allocator := context.allocator) ->
 
 // Root priors (exponentiated logP — i.e., post-Dirichlet if noise was added).
 get_root_policy_priors :: proc(t: ^Tree, allocator := context.allocator) -> map[int]f32 {
-	root := &t.nodes[0]
+	root := &t.nodes[t.root_idx]
 	out := make(map[int]f32, len(root.actions), allocator)
 	for k in 0 ..< len(root.actions) {
 		out[root.actions[k]] = math.exp(root.logP[k])
@@ -146,7 +146,7 @@ get_root_policy_priors :: proc(t: ^Tree, allocator := context.allocator) -> map[
 
 // For each root child, the deepest depth reached in its subtree.
 get_child_max_subtree_depths :: proc(t: ^Tree, allocator := context.allocator) -> map[int]int {
-	root := &t.nodes[0]
+	root := &t.nodes[t.root_idx]
 	out := make(map[int]int, len(root.actions), allocator)
 	stack := make([dynamic]int, 0, 64, context.temp_allocator)
 	defer delete(stack)
