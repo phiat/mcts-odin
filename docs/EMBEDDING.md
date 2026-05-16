@@ -100,7 +100,39 @@ The package is pure Odin. If you need a C-ABI or a Python ctypes wrapper, build 
 
 This is intentionally left out of `mcts-odin` itself so the package stays a pure Odin library. For a worked example, see how `autogodin`'s `odin/alpha_go/exports.odin` exposes its own MCTS + GoBoard to Python via ctypes — the same pattern works on top of `import "mcts"`.
 
-## 5. Tuning
+## 5. Subtree reuse across moves
+
+The naive self-play loop builds a fresh tree for every move:
+
+```odin
+for !game_over {
+    clone := my_game.clone(state)
+    tree: mcts.Tree
+    mcts.init(&tree, &g, clone, cfg, seed)
+    mcts.run_simulations(&tree, 1000, evaluator, ud)
+    action := mcts.select_action(&tree, 0.0)
+    mcts.destroy(&tree)
+    _ = my_game.do_move(state, action)
+}
+```
+
+That discards all the visits and Q values accumulated under the played action. With `mcts.reuse_root` you keep them:
+
+```odin
+tree: mcts.Tree
+mcts.init(&tree, &g, my_game.new_state(), cfg, seed)
+defer mcts.destroy(&tree)
+
+for !my_game.is_terminal(tree.working_state) {
+    mcts.run_simulations(&tree, 1000, evaluator, ud)
+    action := mcts.select_action(&tree, 0.0)
+    mcts.reuse_root(&tree, action)   // re-roots tree at the kept subtree
+}
+```
+
+`reuse_root` applies the move to the tree's working state and re-roots at the kept subtree (or at a synthetic fresh node if you pick an action the tree never expanded). Dirichlet noise is automatically re-applied to the new root on the next `run_simulations`. Old root + sibling subtrees stay in the arena and are reclaimed at `destroy()` — fine for bounded-length games.
+
+## 6. Tuning
 
 | Knob | Effect | Reasonable default |
 |---|---|---|
@@ -112,12 +144,14 @@ This is intentionally left out of `mcts-odin` itself so the package stays a pure
 | `max_depth` | Tree+rollout combined budget | 100 |
 | `pcr_sims` / `pcr_probs` | Categorical mix of per-move sim counts | empty = use the `num_simulations` arg verbatim |
 
-## 6. Memory model
+## 7. Memory model
 
-- The tree owns an internal growing arena; all node and per-node allocations (priors, child indices, cloned states) come from it.
-- `mcts.destroy(&tree)` walks every node calling `game.free` on its state, then drops the arena. If your `clone` allocates outside the tree arena (e.g., on `context.allocator`), make sure `free` matches.
-- The evaluator's scratch buffers (`out_actions`, `out_probs`) come from the tree's `context.temp_allocator` — they're valid only for the duration of the evaluator call.
+- Each tree owns two arenas: a *permanent* arena holding nodes and per-node slot arrays (freed on `destroy`), and a *scratch* arena reset at every `run_simulations` entry.
+- The tree holds one working game state — the root state you passed to `init`. MCTS mutates it in place during descent and restores it via `undo_move` on the way up. `destroy(&tree)` calls `game.free` on that single state.
+- For batched search, the leaf state is captured as a `game.clone` snapshot at descent end, freed after the batched evaluator + backup. Snapshot lifetime is one batch.
+- The evaluator's scratch buffers (`out_actions`, `out_probs`) are owned by the tree (`eval_a_buf`/`eval_p_buf`, sized to `game.max_actions`). They're valid only for the duration of the evaluator call — do not retain pointers.
+- Caller's `context.temp_allocator` is **not** disturbed by MCTS. All transient allocations land on the tree's scratch arena.
 
-## 7. Threading
+## 8. Threading
 
 Not yet. The current MCTS is single-threaded; leaf-parallelism is *algorithmic* (one tree, batched evaluator), not OS-thread parallelism. True root-parallel or tree-parallel MCTS is a future extension.
