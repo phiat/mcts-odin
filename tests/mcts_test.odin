@@ -432,6 +432,46 @@ ttt_pcr_overrides_num_simulations :: proc(t: ^testing.T) {
 	testing.expect_value(t, mcts.get_root_visit_count(&tree), 7)
 }
 
+// Three stable-API readouts had no coverage. This pins their shape and the
+// allocator contract (caller-owned maps that must be deleted).
+@(test)
+ttt_remaining_readouts_well_formed :: proc(t: ^testing.T) {
+	g := ttt.game()
+	state := ttt.new_state()
+	cfg := mcts.default_config()
+	tree: mcts.Tree
+	mcts.init(&tree, &g, state, cfg, seed = 13)
+	defer mcts.destroy(&tree)
+	mcts.run_simulations(&tree, 100, uniform_evaluator, &g)
+
+	priors := mcts.get_root_policy_priors(&tree)
+	defer delete(priors)
+	testing.expect_value(t, len(priors), 9) // 9 legal opening cells
+	sum := f32(0)
+	for _, p in priors {
+		testing.expectf(t, p >= 0.0 && p <= 1.0, "prior out of [0,1]: %f", p)
+		sum += p
+	}
+	testing.expectf(t, sum > 0.99 && sum < 1.01, "priors don't sum to ~1: %f", sum)
+
+	first_evals := mcts.get_child_first_eval_values(&tree)
+	defer delete(first_evals)
+	for _, v in first_evals {
+		testing.expectf(t, v >= 0.0 && v <= 1.0, "first_eval out of [0,1]: %f", v)
+	}
+
+	depths := mcts.get_child_max_subtree_depths(&tree)
+	defer delete(depths)
+	// At 100 sims on TTT the tree should reach depth >= 1 under at least one
+	// child (in fact much more). Conservative check: depths are nonneg.
+	max_d := 0
+	for _, d in depths {
+		testing.expect(t, d >= 0)
+		if d > max_d {max_d = d}
+	}
+	testing.expectf(t, max_d >= 1, "expected at least one child subtree of depth >=1 after 100 sims, got max %d", max_d)
+}
+
 @(private = "file")
 contains :: proc(haystack, needle: string) -> bool {
 	if len(needle) == 0 {return true}
