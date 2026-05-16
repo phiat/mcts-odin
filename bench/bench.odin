@@ -45,6 +45,12 @@ uniform_evaluator :: proc(
 }
 
 run_trial :: proc(g: ^mcts.Game, sims_per_move, moves_per_trial: int, seed: u64) -> (elapsed_ns: i64, total_sims: int) {
+	// The MCTS core never touches the caller's temp_allocator, but
+	// uniform_evaluator allocates a small [dynamic]int there 51,200 times
+	// per trial. Without this reset, the arena grows ~33 MB/trial and later
+	// trials degrade from paging.
+	defer free_all(context.temp_allocator)
+
 	state := gg.new_state(9, 7.5)
 	cfg := mcts.default_config()
 	cfg.c_puct = 1.0
@@ -74,7 +80,7 @@ run_trial :: proc(g: ^mcts.Game, sims_per_move, moves_per_trial: int, seed: u64)
 main :: proc() {
 	sims_per_move := 1600
 	moves_per_trial := 32
-	warmups := 1
+	warmups := 2
 	trials := 5
 
 	g := gg.game()
@@ -88,8 +94,9 @@ main :: proc() {
 		run_trial(&g, sims_per_move, moves_per_trial, u64(42 + i))
 	}
 
-	rates := make([]f64, trials, context.temp_allocator)
-	defer delete(rates, context.temp_allocator)
+	// Not on temp_allocator — run_trial resets that arena per trial.
+	rates := make([]f64, trials)
+	defer delete(rates)
 
 	for i in 0 ..< trials {
 		ns, sims := run_trial(&g, sims_per_move, moves_per_trial, u64(100 + i))
