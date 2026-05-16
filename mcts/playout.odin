@@ -226,6 +226,13 @@ add_dirichlet_noise :: proc(t: ^Tree, alpha, weight: f32) {
 run_simulations :: proc(t: ^Tree, num_simulations: int, evaluator: Evaluator, user_data: rawptr = nil) {
 	use_tree_rng(t)
 	free_all(t.scratch_allocator)
+	// Avoid realloc-and-copy of t.nodes mid-simulation: at most one new node
+	// per playout, so reserve up front. Cap at a sane ceiling so a giant
+	// num_simulations arg doesn't pre-burn megabytes of node storage.
+	if num_simulations > 0 {
+		want := len(t.nodes) + min(num_simulations, 1 << 20)
+		if cap(t.nodes) < want {reserve(&t.nodes, want)}
+	}
 	n_sims := num_simulations
 	if len(t.config.pcr_sims) > 0 {
 		r := rand.float32()

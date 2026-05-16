@@ -34,10 +34,12 @@ Initial extraction from [autogodin](https://github.com/phiat/autogodin), reshape
 - Per-Tree evaluator scratch buffers (`eval_a_buf`, `eval_p_buf`) sized to `game.max_actions`, reused for every evaluator call.
 - Per-Tree scratch arena for transient allocations; caller's `context.temp_allocator` untouched.
 - Cached `is_terminal` and raw `terminal_value` on each node at creation time.
+- Subtree reuse across moves: `mcts.reuse_root(action)` re-roots the tree at the kept child subtree (or allocates a synthetic root if the slot was unexpanded). Depths renormalised so `max_depth` stays meaningful. Prior visit counts and Q values inform PUCT immediately on the next search round.
+- Node pool reserve: `t.nodes` capacity reserved up front at each `run_simulations` entry, avoiding the doubling-realloc chain as the tree grows.
+- Branchless PUCT scan: `select_slot_puct` / `select_slot_puct_vloss` use CMOV-friendly ternary argmax with no data-dependent control flow in the inner loop.
 
 ### Known limitations
 
 - Single-threaded (leaf-parallelism is algorithmic only, not OS-thread parallel).
-- No subtree reuse across game moves — every move rebuilds the tree. Tracked under `z24.5`.
-- No node pool — `nodes` is a `[dynamic]Node` that reallocates as it grows. Tracked under `z24.2`.
 - Bench includes only an in-process Odin evaluator; numbers vs autogodin aren't strictly apples-to-apples (theirs marshals via Python).
+- `math.exp(logP[k])` is still called every PUCT iteration. Caching the un-logged prior on the Node is a future win (tracked as a follow-up under `z24.x`).

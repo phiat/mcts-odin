@@ -154,6 +154,10 @@ run_simulations_batched :: proc(
 ) {
 	use_tree_rng(t)
 	free_all(t.scratch_allocator)
+	if num_simulations > 0 {
+		want := len(t.nodes) + min(num_simulations, 1 << 20)
+		if cap(t.nodes) < want {reserve(&t.nodes, want)}
+	}
 	n_sims := num_simulations
 	if len(t.config.pcr_sims) > 0 {
 		r := rand.float32()
