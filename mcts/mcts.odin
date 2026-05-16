@@ -60,6 +60,15 @@ Config :: struct {
 	// Zero convention). FPU=parent_Q replaces that behavior wholesale — there
 	// is no fpu_reduction value that reproduces the old q=0 default. This is
 	// a deliberate algorithm correction for v0.2.
+	//
+	// Regime caveat: FPU is most useful when priors are informative. Under
+	// uniform priors at very low sim budgets (e.g. 200 sims across 81 legal
+	// Go moves), FPU's correct spread distributes visits so thinly that an
+	// accidental concentration on a single slot can play stronger games — a
+	// concentration-vs-spread tradeoff where individual visits are precious.
+	// Production setups with NN policies won't hit this regime; A/B harnesses
+	// running uniform-eval at low sims may, and the result there reflects
+	// workload degeneracy rather than algorithm quality.
 	fpu_reduction: f32,
 
 	pcr_sims:  []int,
