@@ -44,13 +44,13 @@ main :: proc() {
 9×9 Go, 1600 sims/move × 32 moves, uniform-policy evaluator, single-thread, `-o:speed -no-bounds-check`:
 
 ```
-mcts-odin (default):   ~108,000 sims/s    (~12.8x autogodin cpp, ~37.8x autogodin odin)
+mcts-odin (default):   ~289,000 sims/s    (~34x autogodin cpp, ~101x autogodin odin)
 ```
 
 For reference, [autogodin](https://github.com/phiat/autogodin)'s comparable bench (same workload, evaluator marshalled through a Python callback) reports `cpp: 8,470` and `odin: 2,859` sims/s. The numbers aren't strictly comparable — mcts-odin runs its evaluator inline in Odin without FFI — but the cumulative gap reflects:
 
 - **MCTS core:** in-place do/undo (no per-node clones), packed slot storage with SoA hot fields (`N`, `N_virt`, `Q`), linear-space priors (no `math.exp` in the PUCT loop), branchless argmax, per-tree scratch arena, subtree reuse, FPU producing a broader/shallower tree, inlined xoshiro256++ RNG.
-- **Go board:** clone-free `is_legal_flat` (incremental Zobrist for PSK probes instead of board clones), open-addressing flat u64 hash set for PSK history, `BOARD_SIZE_HINT`-friendly hot-path helpers.
+- **Go board:** incremental per-block liberty tracking (union-find + journaled `do_move`/`undo_move`, compile-time-folded liberty bitset) replaces the per-call group flood-fill in `is_legal_flat` and `do_move` — the single largest lift, ~2.67× over the prior flood-fill baseline of ~108k sims/s. Plus clone-free PSK probes via incremental Zobrist, an open-addressing flat u64 hash set for PSK history, and `BOARD_SIZE_HINT`-friendly hot-path helpers.
 
 ## Architecture
 

@@ -6,7 +6,7 @@
     <title>mcts-odin — Generic, optimized MCTS for Odin</title>
     <meta name="description" content="A generic, optimized Monte Carlo Tree Search package for Odin. AlphaZero-style PUCT, leaf-parallel batched playouts, OS-thread parallelism. Plug your game in via a small vtable.">
     <meta property="og:title" content="mcts-odin">
-    <meta property="og:description" content="Generic, optimized Monte Carlo Tree Search package for Odin. ~108,000 sims/s on 9x9 Go, single-thread.">
+    <meta property="og:description" content="Generic, optimized Monte Carlo Tree Search package for Odin. ~289,000 sims/s on 9x9 Go, single-thread.">
     <meta property="og:type" content="website">
     <link rel="stylesheet" href="style.css">
 </head>
@@ -68,12 +68,13 @@ main :: proc() {
                     <tr><th>Implementation</th><th class="num">sims/s</th><th class="num">relative</th></tr>
                 </thead>
                 <tbody>
-                    <tr class="hero"><td>mcts-odin v0.6.0</td><td class="num">~108,000</td><td class="num">—</td></tr>
-                    <tr><td><a href="https://github.com/phiat/autogodin" class="inline-link">autogodin (C++)</a></td><td class="num">8,470</td><td class="num">12.8× slower</td></tr>
-                    <tr><td><a href="https://github.com/phiat/autogodin" class="inline-link">autogodin (Odin)</a></td><td class="num">2,859</td><td class="num">37.8× slower</td></tr>
+                    <tr class="hero"><td>mcts-odin (incremental libs)</td><td class="num">~289,000</td><td class="num">—</td></tr>
+                    <tr><td>mcts-odin v0.6.0</td><td class="num">~108,000</td><td class="num">2.7× slower</td></tr>
+                    <tr><td><a href="https://github.com/phiat/autogodin" class="inline-link">autogodin (C++)</a></td><td class="num">8,470</td><td class="num">34× slower</td></tr>
+                    <tr><td><a href="https://github.com/phiat/autogodin" class="inline-link">autogodin (Odin)</a></td><td class="num">2,859</td><td class="num">101× slower</td></tr>
                 </tbody>
             </table>
-            <p class="note">Not strictly comparable — mcts-odin's bench runs the evaluator inline; autogodin's marshals through a Python callback. The cumulative gap reflects the do/undo lift, packed slot storage, SoA hot fields, linear-space priors, per-Tree scratch arena, subtree reuse, branchless argmax, FPU (broader/shallower tree), and a clone-free <code>is_legal_flat</code> that probes positional superko via incremental Zobrist. <a href="https://github.com/phiat/mcts-odin#throughput" class="inline-link">Full details →</a></p>
+            <p class="note">Not strictly comparable — mcts-odin's bench runs the evaluator inline; autogodin's marshals through a Python callback. The 2.7× jump over v0.6.0 comes from incremental per-block liberty tracking (union-find + journaled <code>do_move</code>/<code>undo_move</code>, compile-time-folded liberty bitset) replacing the per-call group flood-fill in <code>is_legal_flat</code> and <code>do_move</code>. The remaining cumulative gap reflects the do/undo lift, packed slot storage, SoA hot fields, linear-space priors, per-Tree scratch arena, subtree reuse, branchless argmax, FPU, and clone-free PSK probes via incremental Zobrist. <a href="https://github.com/phiat/mcts-odin#throughput" class="inline-link">Full details →</a></p>
         </section>
 
         <section>
