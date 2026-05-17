@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented here. Versions follow [SemVer](https://semver.org/) once 1.0 lands; pre-1.0 is `0.MINOR.PATCH-stage`.
 
+## [0.7.0] — 2026-05-17
+
+Minor release: a 2.67× single-thread throughput lift on the 9×9 Go bench (~108k → ~289k sims/s) from replacing per-call group flood-fill with incremental per-block liberty tracking. No existing API surface changed; test count 137 → 148.
+
+### Changed
+
+- **Go: incremental liberty tracking (`games/go/blocks.odin`, `games/go/board.odin`).** Replaces `get_group_and_liberties` flood-fill on the hot path with a union-find per cell (`parent[]` points directly at root — no path compression, keeps journaling trivial) + a circular `block_next[]` linked list for traversal + a compile-time-folded `blk_libs[root]` liberty bitset (`BOARD_SIZE_HINT`-aware: 2 u64 words for 9×9, 6 words for 19×19) + `blk_size[root]`. `do_move` journals every parent / block_next / blk_libs / blk_size mutation on four per-board stacks; `undo_move` pops in reverse to restore exact pre-move state. `is_legal_flat` does at most 4 bitset reads + a popcount per neighbor block, no flood-fill. `play_flat_unchecked` routes through `do_move` and drops the journal (forward-only path), keeping `b.blocks` in sync without duplicating the algorithm. 9×9 Go bench: 108k → 289,262 ± 5,381 sims/s (2.67×, vs. the 1.5–1.8× target). Closes mcts-odin-81j.9.
+
+### Added
+
+- **Do/undo round-trip tests** for the union-find replay cases (`tests/games/go/go_game_test.odin`): `do_undo_multi_group_merge` (placement joins 2 friendly groups), `do_undo_multi_group_capture` (one move captures 2 separate opp groups via shared liberty), `do_undo_three_friendly_merge` (placement bridges 3 friendly groups in a cross), and `do_undo_random_selfplay_50` (50 deterministic-LCG moves + full unwind, bit-for-bit board equality). Plus 7 `BlockIndex` tests in `tests/games/go/blocks_test.odin` covering rebuild + consistency-vs-flood-fill across empty / single / chain / separate-groups / post-capture / 30-move random / clone.
+
 ## [0.6.0] — 2026-05-17
 
 Minor release: one new demo game. All additive — no existing API surface changed. Demo-game count goes 10 → 11; test suite 126 → 137.

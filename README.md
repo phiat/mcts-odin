@@ -9,7 +9,7 @@ A generic, optimized Monte Carlo Tree Search package for [Odin](https://odin-lan
 
 Games plug in by implementing a small `Game` vtable; the core knows nothing about Go, chess, or any specific game. Ships with **tic-tac-toe**, **Connect Four**, **Reversi**, **Hex**, **Breakthrough**, **Gomoku**, **Dots and Boxes**, **Amazons**, **Quoridor**, **Nine Men's Morris**, and a **Go** (9×9 / 19×19) reference implementation.
 
-*v0.6.0 · eleven demo games · 137 tests passing under Odin's memory tracker.*
+*v0.7.0 · eleven demo games · 148 tests passing under Odin's memory tracker.*
 
 ## Quick start
 

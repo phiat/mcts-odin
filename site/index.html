@@ -35,7 +35,7 @@
 
         <section class="intro">
             <p>AlphaZero-style PUCT with Dirichlet root noise and First-Play Urgency. Optional fast rollouts, leaf-parallel batched playouts with virtual loss, and OS-thread parallelism. Games plug in via a small <code>Game</code> vtable — the core knows nothing about Go, chess, or any specific game.</p>
-            <p>Ships with eleven demo games (tic-tac-toe, Connect Four, Reversi, Hex, Breakthrough, Gomoku, Dots and Boxes, Amazons, Quoridor, Nine Men's Morris, Go) and a 137-test suite that runs leak-free under Odin's memory tracker.</p>
+            <p>Ships with eleven demo games (tic-tac-toe, Connect Four, Reversi, Hex, Breakthrough, Gomoku, Dots and Boxes, Amazons, Quoridor, Nine Men's Morris, Go) and a 148-test suite that runs leak-free under Odin's memory tracker.</p>
         </section>
 
         <section>
@@ -68,7 +68,7 @@ main :: proc() {
                     <tr><th>Implementation</th><th class="num">sims/s</th><th class="num">relative</th></tr>
                 </thead>
                 <tbody>
-                    <tr class="hero"><td>mcts-odin (incremental libs)</td><td class="num">~289,000</td><td class="num">—</td></tr>
+                    <tr class="hero"><td>mcts-odin v0.7.0</td><td class="num">~289,000</td><td class="num">—</td></tr>
                     <tr><td>mcts-odin v0.6.0</td><td class="num">~108,000</td><td class="num">2.7× slower</td></tr>
                     <tr><td><a href="https://github.com/phiat/autogodin" class="inline-link">autogodin (C++)</a></td><td class="num">8,470</td><td class="num">34× slower</td></tr>
                     <tr><td><a href="https://github.com/phiat/autogodin" class="inline-link">autogodin (Odin)</a></td><td class="num">2,859</td><td class="num">101× slower</td></tr>
@@ -145,7 +145,7 @@ mcts.run_simulations_threaded(&tree, 1600, n_threads = 8,
 
         <section>
             <h2>Latest release</h2>
-            <p><a href="https://github.com/phiat/mcts-odin/releases/tag/v0.6.0" class="inline-link"><strong>v0.6.0</strong></a> — Nine Men's Morris demo game. First demo with explicit game phases (placement → sliding → flying) that reshape the action space mid-game, and the first where one MCTS action atomically contains a follow-up sub-action by the same player (mill formation → opponent-piece removal). Eleven demo games / 137 tests.</p>
+            <p><a href="https://github.com/phiat/mcts-odin/releases/tag/v0.7.0" class="inline-link"><strong>v0.7.0</strong></a> — incremental per-block liberty tracking on the Go board. Replaces the per-call group flood-fill in <code>is_legal_flat</code> and <code>do_move</code> with a journaled union-find + a compile-time-folded liberty bitset. 9×9 Go throughput jumps from ~108k to ~289k sims/s (2.67×, vs. the 1.5–1.8× target). Eleven demo games / 148 tests.</p>
             <p><a href="https://github.com/phiat/mcts-odin/blob/main/CHANGELOG.md" class="inline-link">Full changelog →</a></p>
         </section>
 
