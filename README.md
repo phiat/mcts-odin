@@ -7,9 +7,9 @@
 
 A generic, optimized Monte Carlo Tree Search package for [Odin](https://odin-lang.org/). AlphaZero-style PUCT with Dirichlet root noise + FPU (First-Play Urgency), optional fast rollouts, leaf-parallel batched playouts with virtual loss, and PCR (progressive computation reduction).
 
-Games plug in by implementing a small `Game` vtable; the core knows nothing about Go, chess, or any specific game. Ships with **tic-tac-toe**, **Connect Four**, **Reversi**, **Hex**, **Breakthrough**, **Gomoku**, **Dots and Boxes**, **Amazons**, **Quoridor**, and a **Go** (9×9 / 19×19) reference implementation.
+Games plug in by implementing a small `Game` vtable; the core knows nothing about Go, chess, or any specific game. Ships with **tic-tac-toe**, **Connect Four**, **Reversi**, **Hex**, **Breakthrough**, **Gomoku**, **Dots and Boxes**, **Amazons**, **Quoridor**, **Nine Men's Morris**, and a **Go** (9×9 / 19×19) reference implementation.
 
-*v0.5.0 · ten demo games · 124 tests passing under Odin's memory tracker.*
+*v0.6.0 · eleven demo games · 137 tests passing under Odin's memory tracker.*
 
 ## Quick start
 
@@ -153,8 +153,9 @@ games/
   dots_and_boxes/   4×4 dot grid — extra-turn on box close breaks to_play alternation
   amazons/          6×6 — two-stage moves (queen slide + arrow shot)
   quoridor/         5×5 — heterogeneous action space + per-candidate BFS validation
+  morris/           Nine Men's Morris — phase transitions (place → slide → fly) + sub-action within move (mill removal)
   go/               9×9 / 19×19 with Zobrist PSK, KataGo no-suicide, Tromp-Taylor scoring
-tests/            10 suites (./scripts/test.sh runs all, fails on leaks)
+tests/            11 suites (./scripts/test.sh runs all, fails on leaks)
 examples/
   tictactoe_selfplay.odin       full self-play loop
   nn_evaluator_skeleton.odin    sequential + batched NN evaluator template
@@ -170,7 +171,7 @@ docs/             GETTING_STARTED.md, EMBEDDING.md, UPSTREAM.md
 
 ```bash
 ./scripts/build.sh                                  # build/libmcts_odin.so
-./scripts/test.sh                                   # all 10 suites, fails on leaks
+./scripts/test.sh                                   # all 11 suites, fails on leaks
 odin run examples/tictactoe_selfplay.odin -file -o:speed
 ```
 

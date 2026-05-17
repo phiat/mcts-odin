@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented here. Versions follow [SemVer](https://semver.org/) once 1.0 lands; pre-1.0 is `0.MINOR.PATCH-stage`.
 
+## [0.6.0] — 2026-05-17
+
+Minor release: one new demo game. All additive — no existing API surface changed. Demo-game count goes 10 → 11; test suite 126 → 137.
+
+### Added
+
+- **Nine Men's Morris** (`games/morris/`) — classic 24-point board with three explicit game phases. First demo with **phase transitions that reshape `legal_actions` mid-game** (placement → sliding → flying), and first where **one MCTS action atomically contains a follow-up sub-action by the same player** (mill formation → opponent-piece removal). Includes the standard "cannot remove an opponent piece in a mill *unless* every opponent piece is in a mill" exception. Action encoding packs `(from, to, remove)` into a 15625-id space with `24` as the NONE sentinel; `legal_actions` enumerates only the real triples.
+
 ## [0.5.0] — 2026-05-16
 
 Minor release: three new demo games + an onboarding guide. All additive — no existing API surface changed. Demo-game count goes 7 → 10; test suite 94 → 124.
