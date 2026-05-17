@@ -437,3 +437,114 @@ do_undo_deep_sequence :: proc(t: ^testing.T) {
 	testing.expect(t, boards_equal(&b, &snap), "deep sequence round-trip mismatch")
 	testing.expect_value(t, len(caps), 0)
 }
+
+// -------------------------------------------------------------------------
+// Round-trip guards for mcts-odin-81j.9 (incremental liberty tracking).
+//
+// The current flood-fill implementation passes these. They are scaffolding
+// for the future incremental refactor — the worst cases for a union-find
+// undo journal are multi-group merges (single placement joins ≥2 friendly
+// groups) and multi-group captures via a shared liberty (single placement
+// captures ≥2 separate opp groups). Plus a long random self-play to shake
+// out journal-ordering bugs that targeted tests miss.
+// -------------------------------------------------------------------------
+
+@(test)
+do_undo_multi_group_merge :: proc(t: ^testing.T) {
+	// Two separate B groups with a single empty cell between them; B's next
+	// move at that cell merges both into one group. Worst case for
+	// union-find undo: one move re-creates two pre-existing parent roots.
+	b := ag.make_go_board(9); defer ag.destroy_go_board(&b)
+	caps: [dynamic]ag.CaptureRecord; defer delete(caps)
+
+	ag.play(&b, 4, 3) // B
+	ag.play(&b, 0, 0) // W (dummy)
+	ag.play(&b, 4, 5) // B
+	ag.play(&b, 0, 1) // W (dummy)
+	// B to play. Snapshot.
+	snap := ag.clone_go_board(&b); defer ag.destroy_go_board(&snap)
+
+	// B plays (4,4) — bridges (4,3) and (4,5) into one group.
+	d := ag.do_move(&b, 4 * 9 + 4, &caps)
+	testing.expect_value(t, ag.at(&b, 4, 4), ag.BLACK)
+	testing.expect_value(t, d.capture_count, 0)
+
+	ag.undo_move(&b, d, &caps)
+	testing.expect(t, boards_equal(&b, &snap), "multi-group merge round-trip mismatch")
+	testing.expect_value(t, len(caps), 0)
+}
+
+@(test)
+do_undo_multi_group_capture :: proc(t: ^testing.T) {
+	// Two separate W groups whose only remaining liberty is the same empty
+	// cell (1,0). B at (1,0) captures both groups in one move. The
+	// incremental impl must undo two simultaneous "group resurrected" events.
+	b := ag.make_go_board(9); defer ag.destroy_go_board(&b)
+	caps: [dynamic]ag.CaptureRecord; defer delete(caps)
+
+	ag.play(&b, 8, 8) // B dummy
+	ag.play(&b, 0, 0) // W (group A: just one stone in corner)
+	ag.play(&b, 0, 1) // B — fills lib (0,1) of group A
+	ag.play(&b, 2, 0) // W (group B: one stone)
+	ag.play(&b, 3, 0) // B — fills lib (3,0) of group B
+	ag.play(&b, 7, 7) // W dummy
+	ag.play(&b, 2, 1) // B — fills lib (2,1) of group B
+	ag.play(&b, 7, 8) // W dummy
+	// Both W groups now have a single shared liberty at (1,0).
+	snap := ag.clone_go_board(&b); defer ag.destroy_go_board(&snap)
+
+	d := ag.do_move(&b, 1 * 9 + 0, &caps) // B at (1,0) — captures both W groups
+	testing.expect_value(t, ag.at(&b, 0, 0), ag.EMPTY)
+	testing.expect_value(t, ag.at(&b, 2, 0), ag.EMPTY)
+	testing.expect_value(t, ag.at(&b, 1, 0), ag.BLACK)
+	testing.expect_value(t, d.capture_count, 2)
+
+	ag.undo_move(&b, d, &caps)
+	testing.expect(t, boards_equal(&b, &snap), "multi-group capture round-trip mismatch")
+	testing.expect_value(t, len(caps), 0)
+}
+
+@(test)
+do_undo_random_selfplay_50 :: proc(t: ^testing.T) {
+	// 50 uniform-random legal moves on 9x9 with a deterministic LCG seed.
+	// Push all, then unwind in reverse — final state must match initial
+	// snapshot exactly. Catches journal-ordering bugs that targeted tests
+	// would not surface. Uses a local LCG so the run is byte-identical
+	// across hosts (no stdlib RNG version drift).
+	SIZE :: 9
+	N :: SIZE * SIZE
+	b := ag.make_go_board(SIZE); defer ag.destroy_go_board(&b)
+	caps: [dynamic]ag.CaptureRecord; defer delete(caps)
+	snap := ag.clone_go_board(&b); defer ag.destroy_go_board(&snap)
+
+	deltas: [dynamic]ag.MoveDelta; defer delete(deltas)
+	legal: [N + 1]int // candidate actions buffer (incl. PASS)
+	rng: u64 = 0xdeadbeef_cafebabe
+
+	for step in 0 ..< 50 {
+		if ag.is_game_over(&b) {break}
+		// Numerical Recipes LCG.
+		rng = rng * 6364136223846793005 + 1442695040888963407
+		count := 0
+		for i in 0 ..< N {
+			if ag.is_legal_flat(&b, i) {
+				legal[count] = i
+				count += 1
+			}
+		}
+		// PASS is always legal.
+		legal[count] = ag.PASS_ACTION
+		count += 1
+
+		choice := int((rng >> 33) % u64(count))
+		d := ag.do_move(&b, legal[choice], &caps)
+		append(&deltas, d)
+		_ = step
+	}
+
+	for i := len(deltas) - 1; i >= 0; i -= 1 {
+		ag.undo_move(&b, deltas[i], &caps)
+	}
+	testing.expect(t, boards_equal(&b, &snap), "random 50-move self-play round-trip mismatch")
+	testing.expect_value(t, len(caps), 0)
+}
