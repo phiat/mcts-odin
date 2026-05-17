@@ -121,6 +121,15 @@ GoBoard :: struct {
 	// now 1 — just the Adapter_Delta itself).
 	captures: [dynamic]CaptureRecord,
 
+	// Incremental per-block (stone group) index — replaces get_group_and_liberties
+	// flood-fill in the do_move / is_legal_flat hot path. See mcts-odin-81j.9.
+	// Maintained inline by do_move; journaled mutations are reversed by undo_move.
+	blocks:      BlockIndex,
+	parent_undo: [dynamic]JournalParent,
+	next_undo:   [dynamic]JournalNext,
+	libs_undo:   [dynamic]JournalLibs,
+	size_undo:   [dynamic]JournalSize,
+
 	allocator:    runtime.Allocator,
 }
 
@@ -141,6 +150,7 @@ make_go_board :: proc(size: int = 9, komi: f32 = KOMI_DEFAULT, allocator := cont
 		allocator = allocator,
 	}
 	b.seen_hashes = hash_set_make(HASH_SET_INITIAL_CAP, allocator)
+	b.blocks = block_index_make(n, allocator)
 	return b
 }
 
@@ -148,6 +158,11 @@ destroy_go_board :: proc(b: ^GoBoard) {
 	delete(b.board, b.allocator)
 	hash_set_destroy(&b.seen_hashes)
 	delete(b.captures)
+	block_index_destroy(&b.blocks)
+	delete(b.parent_undo)
+	delete(b.next_undo)
+	delete(b.libs_undo)
+	delete(b.size_undo)
 	b^ = {}
 }
 
@@ -167,6 +182,8 @@ clone_go_board :: proc(src: ^GoBoard, allocator := context.allocator) -> GoBoard
 		allocator          = allocator,
 	}
 	dst.seen_hashes = hash_set_clone(&src.seen_hashes, allocator)
+	dst.blocks = block_index_clone(&src.blocks, allocator)
+	// Journals are scratch / per-descent; clones start empty.
 	return dst
 }
 
@@ -292,10 +309,13 @@ is_legal :: proc(b: ^GoBoard, row, col: int) -> bool {
 	return is_legal_flat(b, row * board_dim(b) + col)
 }
 
-// Legality test for placing b.to_play at `index`. Avoids the old clone-and-play
-// path: captures are detected by flood-filling adjacent opp groups in place,
-// suicide is checked by inspecting friendly-group liberties, and the would-be
-// post-move Zobrist hash is computed incrementally for the PSK probe.
+// Legality test for placing b.to_play at `index`. Uses the incremental
+// BlockIndex (Phase 3 of mcts-odin-81j.9) — no flood-fill on the hot path.
+//
+// Capture detection: an opp block dies iff (blk_libs[opp_root] with bit(index)
+// cleared) == 0. Suicide detection: the placed stone's virtual block has
+// libs == union of (empty neighbors of index) + (friendly neighbor block
+// libs) with bit(index) cleared; if zero AND no captures, the move is suicide.
 is_legal_flat :: proc(b: ^GoBoard, index: int) -> bool {
 	if index < 0 || index >= n_cells(b) {return false}
 	if b.board[index] != EMPTY {return false}
@@ -317,62 +337,74 @@ is_legal_flat :: proc(b: ^GoBoard, index: int) -> bool {
 	// no hash to probe.
 	if has_empty && !need_psk_check {return true}
 
-	n := n_cells(b)
-
-	// Find unique opponent groups adjacent to `index`. Capture detection:
-	// pre-move libs == {index} ⇒ post-move libs == {} ⇒ group is captured.
-	visited_opp := make([]bool, n, context.temp_allocator)
-	defer delete(visited_opp, context.temp_allocator)
-	captured := make([dynamic]int, 0, 8, context.temp_allocator)
-	defer delete(captured)
-
+	// Enumerate distinct opp blocks adjacent to `index` and detect captures
+	// via bitset. At most 4 distinct neighbor blocks (one per orthogonal dir).
+	seen_opp_roots: [4]u16
+	seen_opp_count := 0
+	captured_groups: [4]u16  // roots of captured opp blocks (for PSK rebuild)
+	captured_count := 0
 	for k in 0 ..< nb.count {
 		ni := nb.indices[k]
-		if b.board[ni] != opponent || visited_opp[ni] {continue}
-		group, libs := get_group_and_liberties(b, ni, context.temp_allocator)
-		is_captured := len(libs) == 1 && libs[0] == index
-		for g in group {
-			visited_opp[g] = true
-			if is_captured {append(&captured, g)}
+		if b.board[ni] != opponent {continue}
+		or := b.blocks.parent[ni]
+		already := false
+		for j in 0 ..< seen_opp_count {
+			if seen_opp_roots[j] == or {already = true; break}
 		}
-		delete(group)
-		delete(libs)
+		if already {continue}
+		seen_opp_roots[seen_opp_count] = or
+		seen_opp_count += 1
+		// Local copy of the bitset, clear bit(index), test zero.
+		libs := b.blocks.blk_libs[or]
+		libset_clear(&libs, index)
+		if libset_is_zero(&libs) {
+			captured_groups[captured_count] = or
+			captured_count += 1
+		}
 	}
 
-	has_capture := len(captured) > 0
+	has_capture := captured_count > 0
 
-	// Suicide check. Reached only when there's no empty neighbor and no
-	// capture; otherwise the placed stone's virtual group already has a
-	// liberty (the empty neighbor, or one of the to-be-empty captured cells).
-	//
-	// Without captures or empty neighbors, the virtual group's only possible
-	// liberties come from existing friendly-group liberties OTHER than
-	// `index` itself. A friendly group adjacent to `index` necessarily has
-	// `index` as one of its liberties, so libs >= 2 ⇔ has a liberty that
-	// isn't `index` ⇔ virtual group survives.
+	// Suicide check (only reached when no empty neighbor and no capture).
 	if !has_empty && !has_capture {
-		visited_fr := make([]bool, n, context.temp_allocator)
-		defer delete(visited_fr, context.temp_allocator)
-		has_friendly_liberty := false
+		// Build the virtual block's libs: union of friendly-block libs,
+		// then clear bit(index). (No empty neighbors at this point — we
+		// checked has_empty above.)
+		virt_libs: LibBitset
+		libset_zero(&virt_libs)
+		seen_fr_roots: [4]u16
+		seen_fr_count := 0
 		for k in 0 ..< nb.count {
 			ni := nb.indices[k]
-			if b.board[ni] != player || visited_fr[ni] {continue}
-			group, libs := get_group_and_liberties(b, ni, context.temp_allocator)
-			for g in group {visited_fr[g] = true}
-			lib_count := len(libs)
-			delete(group)
-			delete(libs)
-			if lib_count >= 2 {has_friendly_liberty = true; break}
+			if b.board[ni] != player {continue}
+			fr := b.blocks.parent[ni]
+			already := false
+			for j in 0 ..< seen_fr_count {
+				if seen_fr_roots[j] == fr {already = true; break}
+			}
+			if already {continue}
+			seen_fr_roots[seen_fr_count] = fr
+			seen_fr_count += 1
+			fr_libs := b.blocks.blk_libs[fr]
+			libset_or(&virt_libs, &fr_libs)
 		}
-		if !has_friendly_liberty {return false}
+		libset_clear(&virt_libs, index)
+		if libset_is_zero(&virt_libs) {return false}
 	}
 
 	// PSK check. Compute the would-be hash without mutating state:
 	//   h := current_hash XOR placed_stone XOR each captured stone.
+	// Walk each captured opp block via block_next to enumerate the cells.
 	if need_psk_check {
 		h := b.current_hash ~ b.tables.zobrist[index][int(player)]
-		for c in captured {
-			h ~= b.tables.zobrist[c][int(opponent)]
+		for ci in 0 ..< captured_count {
+			root := int(captured_groups[ci])
+			cur := root
+			for {
+				h ~= b.tables.zobrist[cur][int(opponent)]
+				cur = int(b.blocks.block_next[cur])
+				if cur == root {break}
+			}
 		}
 		if hash_set_contains(&b.seen_hashes, h) {return false}
 	}
@@ -401,48 +433,16 @@ play_flat :: proc(b: ^GoBoard, index: int) -> bool {
 	return true
 }
 
-// Applies a move assuming legality already checked. Used by play_flat AND by
-// is_legal_flat (on a temp clone) to detect multi-stone suicide.
+// Applies a move assuming legality already checked. Forward-only (no undo
+// support). Used by play_flat for tests + external callers. Routes through
+// do_move so the block index stays in sync, then drops the journal entries
+// since play_flat has no undo path.
 play_flat_unchecked :: proc(b: ^GoBoard, index: int) {
-	// Record the pre-move state hash in seen_hashes (for PSK on future moves).
-	hash_set_add(&b.seen_hashes, b.current_hash)
-
-	b.board[index] = b.to_play
-	b.current_hash ~= b.tables.zobrist[index][int(b.to_play)]
-	opp := opponent_of(b.to_play)
-	b.ko_point = NO_KO
-
-	total_captured := 0
-	last_captured := -1
-
-	nb := b.tables.neighbors[index]
-	for k in 0 ..< nb.count {
-		ni := nb.indices[k]
-		if b.board[ni] == opp {
-			group, libs := get_group_and_liberties(b, ni, context.temp_allocator)
-			if len(libs) == 0 {
-				if len(group) == 1 {
-					last_captured = group[0]
-				}
-				total_captured += remove_group(b, group[:])
-			}
-			delete(group)
-			delete(libs)
-		}
-	}
-
-	our_group, our_libs := get_group_and_liberties(b, index, context.temp_allocator)
-	if len(our_libs) == 0 {
-		remove_group(b, our_group[:])
-	} else if total_captured == 1 && len(our_group) == 1 && len(our_libs) == 1 {
-		b.ko_point = last_captured
-	}
-	delete(our_group)
-	delete(our_libs)
-
-	b.consecutive_passes = 0
-	b.move_count += 1
-	b.to_play = opp
+	_ = do_move(b, index, &b.captures)
+	clear(&b.parent_undo)
+	clear(&b.next_undo)
+	clear(&b.libs_undo)
+	clear(&b.size_undo)
 }
 
 pass_move :: proc(b: ^GoBoard) -> bool {
@@ -475,6 +475,14 @@ MoveDelta :: struct {
 	action:                  int, // PASS_ACTION or [0, size*size)
 	capture_start:           int, // index into captures stack
 	capture_count:           int,
+	parent_undo_start:       int, // index into b.parent_undo
+	parent_undo_count:       int,
+	next_undo_start:         int,
+	next_undo_count:         int,
+	libs_undo_start:         int,
+	libs_undo_count:         int,
+	size_undo_start:         int,
+	size_undo_count:         int,
 	prev_ko_point:           int,
 	prev_consecutive_passes: int,
 	prev_move_count:         int,
@@ -488,6 +496,10 @@ do_move :: proc(b: ^GoBoard, action: int, captures: ^[dynamic]CaptureRecord) -> 
 	delta := MoveDelta {
 		action                  = action,
 		capture_start           = len(captures),
+		parent_undo_start       = len(b.parent_undo),
+		next_undo_start         = len(b.next_undo),
+		libs_undo_start         = len(b.libs_undo),
+		size_undo_start         = len(b.size_undo),
 		prev_ko_point           = b.ko_point,
 		prev_consecutive_passes = b.consecutive_passes,
 		prev_move_count         = b.move_count,
@@ -507,51 +519,174 @@ do_move :: proc(b: ^GoBoard, action: int, captures: ^[dynamic]CaptureRecord) -> 
 		return delta
 	}
 
-	// Mirrors play_flat_unchecked, but records every captured stone on `captures`.
-	b.board[action] = b.to_play
-	b.current_hash ~= b.tables.zobrist[action][int(b.to_play)]
-	opp := opponent_of(b.to_play)
+	// ----- Place stone + initialize singleton block -----
+	player := b.to_play
+	opp := opponent_of(player)
+	b.board[action] = player
+	b.current_hash ~= b.tables.zobrist[action][int(player)]
 	b.ko_point = NO_KO
 
-	total_captured := 0
-	last_captured := -1
-
 	nb := b.tables.neighbors[action]
+
+	// New singleton block at `action`. Journal old (empty-cell) values so undo
+	// restores parent[action]=NO_PARENT, block_next[action]=action.
+	append(&b.parent_undo, JournalParent{cell = u16(action), prev = b.blocks.parent[action]})
+	append(&b.next_undo, JournalNext{cell = u16(action), prev = b.blocks.block_next[action]})
+	b.blocks.parent[action] = u16(action)
+	b.blocks.block_next[action] = u16(action)
+	// blk_libs[action] / blk_size[action] are "unused junk" while action was
+	// empty; their prior values are irrelevant. Journal them anyway so undo
+	// restores the slot to "junk we don't read" again.
+	append(&b.libs_undo, JournalLibs{root = u16(action), prev = b.blocks.blk_libs[action]})
+	append(&b.size_undo, JournalSize{root = u16(action), prev = b.blocks.blk_size[action]})
+	libset_zero(&b.blocks.blk_libs[action])
+	b.blocks.blk_size[action] = 1
 	for k in 0 ..< nb.count {
 		ni := nb.indices[k]
-		if b.board[ni] == opp {
-			group, libs := get_group_and_liberties(b, ni, context.temp_allocator)
-			if len(libs) == 0 {
-				if len(group) == 1 {last_captured = group[0]}
-				for idx in group {
-					append(captures, CaptureRecord{index = i32(idx), color = opp})
-				}
-				total_captured += remove_group(b, group[:])
-			}
-			delete(group)
-			delete(libs)
+		if b.board[ni] == EMPTY {
+			libset_set(&b.blocks.blk_libs[action], ni)
 		}
 	}
 
-	our_group, our_libs := get_group_and_liberties(b, action, context.temp_allocator)
-	if len(our_libs) == 0 {
-		// Multi-stone suicide: our own group gets removed. Record those captures
-		// under our own color so undo can restore them correctly.
-		for idx in our_group {
-			append(captures, CaptureRecord{index = i32(idx), color = b.to_play})
+	// ----- Merge with friendly neighbors -----
+	// my_root tracks the surviving root after each union (union-by-larger).
+	my_root := action
+	for k in 0 ..< nb.count {
+		ni := nb.indices[k]
+		if b.board[ni] != player {continue}
+		fr := int(b.blocks.parent[ni])
+		if fr == my_root {continue} // already merged through a previous neighbor
+		// Union: keep the larger block's root, rewrite the smaller block's
+		// parent[] entries.
+		larger, smaller := fr, my_root
+		if int(b.blocks.blk_size[larger]) < int(b.blocks.blk_size[smaller]) {
+			larger, smaller = smaller, larger
 		}
-		remove_group(b, our_group[:])
-	} else if total_captured == 1 && len(our_group) == 1 && len(our_libs) == 1 {
+		cur := smaller
+		for {
+			append(&b.parent_undo, JournalParent{cell = u16(cur), prev = b.blocks.parent[cur]})
+			b.blocks.parent[cur] = u16(larger)
+			nxt := int(b.blocks.block_next[cur])
+			if nxt == smaller {break}
+			cur = nxt
+		}
+		// Splice the two cycles into one. Both lists are circular at this
+		// point; swap larger.next and smaller.next.
+		append(&b.next_undo, JournalNext{cell = u16(larger), prev = b.blocks.block_next[larger]})
+		append(&b.next_undo, JournalNext{cell = u16(smaller), prev = b.blocks.block_next[smaller]})
+		la_n := b.blocks.block_next[larger]
+		sm_n := b.blocks.block_next[smaller]
+		b.blocks.block_next[larger] = sm_n
+		b.blocks.block_next[smaller] = la_n
+		// Merge libs and size into larger; clear bit(action) since the placed
+		// stone is no longer a liberty.
+		append(&b.libs_undo, JournalLibs{root = u16(larger), prev = b.blocks.blk_libs[larger]})
+		append(&b.size_undo, JournalSize{root = u16(larger), prev = b.blocks.blk_size[larger]})
+		libset_or(&b.blocks.blk_libs[larger], &b.blocks.blk_libs[smaller])
+		libset_clear(&b.blocks.blk_libs[larger], action)
+		b.blocks.blk_size[larger] += b.blocks.blk_size[smaller]
+		my_root = larger
+	}
+
+	// ----- Decrement opp libs; capture groups whose libs hit zero -----
+	total_captured := 0
+	last_captured := -1
+	captured_cells := make([dynamic]int, 0, 16, context.temp_allocator)
+	defer delete(captured_cells)
+	for k in 0 ..< nb.count {
+		ni := nb.indices[k]
+		if b.board[ni] != opp {continue}
+		or := int(b.blocks.parent[ni])
+		// Dedup multiple neighbors in same opp block: once we clear bit(action),
+		// a second visit sees it cleared and skips.
+		if !libset_test(&b.blocks.blk_libs[or], action) {continue}
+		append(&b.libs_undo, JournalLibs{root = u16(or), prev = b.blocks.blk_libs[or]})
+		libset_clear(&b.blocks.blk_libs[or], action)
+		if !libset_is_zero(&b.blocks.blk_libs[or]) {continue}
+
+		// Capture the opp block. Walk block_next chain, collect cells.
+		size_before := len(captured_cells)
+		cur := or
+		for {
+			append(&captured_cells, cur)
+			cur = int(b.blocks.block_next[cur])
+			if cur == or {break}
+		}
+		grp_size := len(captured_cells) - size_before
+		if grp_size == 1 {last_captured = captured_cells[size_before]}
+		for i in size_before ..< len(captured_cells) {
+			c := captured_cells[i]
+			append(captures, CaptureRecord{index = i32(c), color = opp})
+			b.current_hash ~= b.tables.zobrist[c][int(opp)]
+			b.board[c] = EMPTY
+			append(&b.parent_undo, JournalParent{cell = u16(c), prev = b.blocks.parent[c]})
+			append(&b.next_undo, JournalNext{cell = u16(c), prev = b.blocks.block_next[c]})
+			b.blocks.parent[c] = NO_PARENT
+			b.blocks.block_next[c] = u16(c)
+		}
+		total_captured += grp_size
+		// For each captured cell, walk neighbors and liberate adjacent blocks
+		// (add bit(c) to their blk_libs).
+		for i in size_before ..< len(captured_cells) {
+			c := captured_cells[i]
+			nc := b.tables.neighbors[c]
+			for j in 0 ..< nc.count {
+				nni := nc.indices[j]
+				if b.board[nni] == EMPTY {continue}
+				or2 := int(b.blocks.parent[nni])
+				if libset_test(&b.blocks.blk_libs[or2], c) {continue}
+				append(&b.libs_undo, JournalLibs{root = u16(or2), prev = b.blocks.blk_libs[or2]})
+				libset_set(&b.blocks.blk_libs[or2], c)
+			}
+		}
+	}
+
+	// ----- Suicide check on the placed-stone's combined block -----
+	if libset_is_zero(&b.blocks.blk_libs[my_root]) {
+		// Multi-stone suicide: remove own group. Same shape as opp capture
+		// above, but with player color. Walk block_next, record + clear.
+		own_start := len(captured_cells)
+		cur := my_root
+		for {
+			append(&captured_cells, cur)
+			cur = int(b.blocks.block_next[cur])
+			if cur == my_root {break}
+		}
+		for i in own_start ..< len(captured_cells) {
+			c := captured_cells[i]
+			append(captures, CaptureRecord{index = i32(c), color = player})
+			b.current_hash ~= b.tables.zobrist[c][int(player)]
+			b.board[c] = EMPTY
+			append(&b.parent_undo, JournalParent{cell = u16(c), prev = b.blocks.parent[c]})
+			append(&b.next_undo, JournalNext{cell = u16(c), prev = b.blocks.block_next[c]})
+			b.blocks.parent[c] = NO_PARENT
+			b.blocks.block_next[c] = u16(c)
+		}
+		for i in own_start ..< len(captured_cells) {
+			c := captured_cells[i]
+			nc := b.tables.neighbors[c]
+			for j in 0 ..< nc.count {
+				nni := nc.indices[j]
+				if b.board[nni] == EMPTY {continue}
+				or2 := int(b.blocks.parent[nni])
+				if libset_test(&b.blocks.blk_libs[or2], c) {continue}
+				append(&b.libs_undo, JournalLibs{root = u16(or2), prev = b.blocks.blk_libs[or2]})
+				libset_set(&b.blocks.blk_libs[or2], c)
+			}
+		}
+	} else if total_captured == 1 && b.blocks.blk_size[my_root] == 1 && libset_popcount(&b.blocks.blk_libs[my_root]) == 1 {
 		b.ko_point = last_captured
 	}
-	delete(our_group)
-	delete(our_libs)
 
 	b.consecutive_passes = 0
 	b.move_count += 1
 	b.to_play = opp
 
 	delta.capture_count = len(captures) - delta.capture_start
+	delta.parent_undo_count = len(b.parent_undo) - delta.parent_undo_start
+	delta.next_undo_count = len(b.next_undo) - delta.next_undo_start
+	delta.libs_undo_count = len(b.libs_undo) - delta.libs_undo_start
+	delta.size_undo_count = len(b.size_undo) - delta.size_undo_start
 	return delta
 }
 
@@ -567,6 +702,32 @@ undo_move :: proc(b: ^GoBoard, delta: MoveDelta, captures: ^[dynamic]CaptureReco
 		b.board[rec.index] = rec.color
 	}
 	resize(captures, delta.capture_start)
+
+	// Pop block-index journals in reverse push order to undo every mutation.
+	// Order: size → libs → next → parent. Within each kind, reverse-pop.
+	for i := delta.size_undo_count - 1; i >= 0; i -= 1 {
+		e := b.size_undo[delta.size_undo_start + i]
+		b.blocks.blk_size[e.root] = e.prev
+	}
+	resize(&b.size_undo, delta.size_undo_start)
+
+	for i := delta.libs_undo_count - 1; i >= 0; i -= 1 {
+		e := b.libs_undo[delta.libs_undo_start + i]
+		b.blocks.blk_libs[e.root] = e.prev
+	}
+	resize(&b.libs_undo, delta.libs_undo_start)
+
+	for i := delta.next_undo_count - 1; i >= 0; i -= 1 {
+		e := b.next_undo[delta.next_undo_start + i]
+		b.blocks.block_next[e.cell] = e.prev
+	}
+	resize(&b.next_undo, delta.next_undo_start)
+
+	for i := delta.parent_undo_count - 1; i >= 0; i -= 1 {
+		e := b.parent_undo[delta.parent_undo_start + i]
+		b.blocks.parent[e.cell] = e.prev
+	}
+	resize(&b.parent_undo, delta.parent_undo_start)
 
 	// Scalars: restore wholesale.
 	b.current_hash = delta.prev_current_hash
@@ -664,4 +825,11 @@ set_from_array :: proc(b: ^GoBoard, data: []i8, to_play: i8) {
 		if b.board[i] != EMPTY {mc += 1}
 	}
 	b.move_count = mc
+	// set_from_array bypasses do_move; resync the block index from scratch.
+	block_index_rebuild(&b.blocks, b)
+	// Drop any in-flight journal state — there's nothing to undo to.
+	clear(&b.parent_undo)
+	clear(&b.next_undo)
+	clear(&b.libs_undo)
+	clear(&b.size_undo)
 }

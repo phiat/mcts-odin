@@ -505,6 +505,31 @@ do_undo_multi_group_capture :: proc(t: ^testing.T) {
 }
 
 @(test)
+do_undo_three_friendly_merge :: proc(t: ^testing.T) {
+	// Stone at the center of a cross merges THREE friendly groups in one move
+	// (north, east, south arms). Catches union-replay bugs where only 2 of N
+	// merges get correctly journaled.
+	b := ag.make_go_board(9); defer ag.destroy_go_board(&b)
+	caps: [dynamic]ag.CaptureRecord; defer delete(caps)
+
+	ag.play(&b, 3, 4) // B (north)
+	ag.play(&b, 0, 0) // W
+	ag.play(&b, 5, 4) // B (south)
+	ag.play(&b, 0, 1) // W
+	ag.play(&b, 4, 5) // B (east)
+	ag.play(&b, 0, 2) // W
+
+	snap := ag.clone_go_board(&b); defer ag.destroy_go_board(&snap)
+	d := ag.do_move(&b, 4 * 9 + 4, &caps) // B at center — merges 3 friendly groups
+	testing.expect_value(t, ag.at(&b, 4, 4), ag.BLACK)
+	testing.expect_value(t, d.capture_count, 0)
+
+	ag.undo_move(&b, d, &caps)
+	testing.expect(t, boards_equal(&b, &snap), "three-friendly merge round-trip mismatch")
+	testing.expect_value(t, len(caps), 0)
+}
+
+@(test)
 do_undo_random_selfplay_50 :: proc(t: ^testing.T) {
 	// 50 uniform-random legal moves on 9x9 with a deterministic LCG seed.
 	// Push all, then unwind in reverse — final state must match initial

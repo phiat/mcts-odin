@@ -45,6 +45,15 @@ BlockIndex :: struct {
 	allocator:  runtime.Allocator,
 }
 
+// Journal entries for do_move → undo_move reversibility. Pushed by do_move,
+// popped in reverse by undo_move. Live as four [dynamic]'s on GoBoard so
+// they survive across MCTS descents (push during descent, pop during backup;
+// net stable capacity after warmup, same lifecycle as b.captures).
+JournalParent :: struct {cell: u16, prev: u16}
+JournalNext   :: struct {cell: u16, prev: u16}
+JournalLibs   :: struct {root: u16, prev: LibBitset}
+JournalSize   :: struct {root: u16, prev: u16}
+
 // ---------------------------------------------------------------------------
 // Bitset helpers. Inlined; codegen folds the loop when BITSET_WORDS is small.
 // ---------------------------------------------------------------------------
